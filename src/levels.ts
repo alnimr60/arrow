@@ -379,7 +379,7 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
   },
 ];
 
-const TOTAL_LEVELS_COUNT = 100;
+const TOTAL_LEVELS_COUNT = 600;
 export const LEVELS: Level[] = [...HAND_CRAFTED_LEVELS];
 
 for (let i = HAND_CRAFTED_LEVELS.length; i < TOTAL_LEVELS_COUNT; i++) {

@@ -98,7 +98,7 @@ export default function App() {
         }
         return next;
       });
-    }, 100);
+    }, 200); // Reduced frequency for performance
 
     return () => clearInterval(timer);
   }, [showVictory, showGameOver, isMuted, timeLeft === null]);
@@ -516,7 +516,6 @@ export default function App() {
             <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
             <div className="grid grid-cols-5 gap-1.5">
               {LEVELS.slice(Math.max(0, currentLevelIdx - 10), Math.min(LEVELS.length, currentLevelIdx + 15)).map((_, i) => {
-                const idx = LEVELS.indexOf(_) ; // Adjusted to handle slice correctly
                 const actualIdx = i + Math.max(0, currentLevelIdx - 10);
                 return (
                   <button
@@ -537,226 +536,26 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Center: Game Board */}
-        <section className="flex flex-col items-center justify-center relative touch-none">
-          <div 
-            className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
-              gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
-              gap: '8px',
-              width: 'min(90vw, 450px)',
-              height: 'min(90vw, 450px)',
-            }}
-          >
-            {/* Cell Grid Background */}
-            {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
-              <div key={i} className="bg-slate-800/50 rounded-lg" />
-            ))}
-
-            {/* Tiles: Conveyors, Gates, etc. */}
-            {tiles.map((tile, i) => (
-              <div 
-                key={`tile-${i}`}
-                className={`
-                  absolute rounded-lg flex items-center justify-center opacity-60
-                  ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
-                  ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
-                `}
-                style={{
-                  width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                  height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                  left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.x})`,
-                  top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.y})`,
-                }}
-              >
-                {tile.type.startsWith('conveyor') && (
-                  <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
-                )}
-                {tile.type.startsWith('gate') && (
-                  tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
-                )}
-              </div>
-            ))}
-
-            {/* Ghost Path Indicator (Launch Beam) */}
-            {ghostPath && (() => {
-              const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`;
-              const cellOffset = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.x})`;
-              const cellOffsetTop = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.y})`;
-              
-              const style: React.CSSProperties = {
-                position: 'absolute',
-                borderRadius: '12px',
-                boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)',
-                zIndex: 0,
-                pointerEvents: 'none',
-                overflow: 'hidden'
-              };
-
-              if (ghostPath.dir === 'right') {
-                style.left = cellOffset;
-                style.right = '12px';
-                style.top = cellOffsetTop;
-                style.height = cellSize;
-                style.background = 'linear-gradient(to right, rgba(34, 211, 238, 0.4), transparent)';
-              } else if (ghostPath.dir === 'left') {
-                style.left = '12px';
-                style.width = `calc(${cellOffset} + ${cellSize} - 12px)`;
-                style.top = cellOffsetTop;
-                style.height = cellSize;
-                style.background = 'linear-gradient(to left, rgba(34, 211, 238, 0.4), transparent)';
-              } else if (ghostPath.dir === 'down') {
-                style.left = cellOffset;
-                style.width = cellSize;
-                style.top = cellOffsetTop;
-                style.bottom = '12px';
-                style.background = 'linear-gradient(to bottom, rgba(34, 211, 238, 0.4), transparent)';
-              } else if (ghostPath.dir === 'up') {
-                style.left = cellOffset;
-                style.width = cellSize;
-                style.top = '12px';
-                style.height = `calc(${cellOffsetTop} + ${cellSize} - 12px)`;
-                style.background = 'linear-gradient(to top, rgba(34, 211, 238, 0.4), transparent)';
-              }
-
-              return (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  style={style}
-                >
-                  <motion.div 
-                    animate={{ opacity: [0.2, 0.5, 0.2] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                    className="w-full h-full bg-white/5"
-                  />
-                </motion.div>
-              );
-            })()}
-
-            {/* Arrows */}
-            <AnimatePresence mode="popLayout">
-              {arrows.map((arrow) => {
-                if (removedIds.has(arrow.id)) return null;
-                
-                const isShaking = shakeId === arrow.id;
-                const isHinted = hintId === arrow.id;
-                const isLocked = arrow.type === 'locked' && hasKeys;
-                
-                return (
-                  <motion.button
-                    key={arrow.id}
-                    layoutId={arrow.id}
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ 
-                      scale: 1, 
-                      opacity: isLocked ? 0.4 : 1,
-                      x: isShaking ? [0, -5, 5, -5, 5, 0] : 0,
-                      filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
-                    }}
-                    exit={{ 
-                      x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
-                      y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
-                      opacity: 0,
-                      scale: 0.9,
-                      transition: { duration: 0.5, ease: "anticipate" }
-                    }}
-                    whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                    whileTap={{ scale: isLocked ? 1 : 0.9 }}
-                    onMouseEnter={() => setHoveredArrowId(arrow.id)}
-                    onMouseLeave={() => setHoveredArrowId(null)}
-                    onClick={() => handleArrowClick(arrow)}
-                    className={`
-                      absolute flex items-center justify-center rounded-lg transition-all duration-300
-                      ${isHinted ? 'bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
-                      ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
-                      ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
-                      ${arrow.type === 'key' ? 'bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
-                      ${arrow.type === 'rotator' ? 'bg-purple-500/10' : ''}
-                      ${arrow.type === 'shifter' ? 'bg-cyan-500/10' : ''}
-                      ${arrow.type === 'switch' ? 'bg-pink-500/10 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
-                      z-10
-                    `}
-                    style={{
-                      width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                      height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                      left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.x})`,
-                      top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.y})`,
-                    }}
-                  >
-                    <ArrowIcon arrow={arrow} />
-                    {isLocked && <div className="absolute inset-0 flex items-center justify-center"><Lock size={12} className="text-white/40" /></div>}
-                    {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
-                  </motion.button>
-                );
-              })}
-            </AnimatePresence>
-
-            {/* Victory Modal */}
-            <AnimatePresence>
-              {showVictory && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-[#22d3ee]/20"
-                >
-                  <motion.div
-                    animate={{ y: [0, -10, 0], scale: [1, 1.1, 1] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                    className="text-yellow-400 mb-4"
-                  >
-                    <Trophy size={60} />
-                  </motion.div>
-                  <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Stage Clear</h2>
-                  <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
-                  <button
-                    onClick={currentLevelIdx < LEVELS.length - 1 ? nextLevel : handleReset}
-                    className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
-                  >
-                    {currentLevelIdx < LEVELS.length - 1 ? 'Next Level' : 'Play Again'}
-                    <ChevronRight size={20} />
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Game Over Modal */}
-            <AnimatePresence>
-              {showGameOver && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-red-500/20"
-                >
-                  <motion.div
-                    animate={{ rotate: [0, -10, 10, 0] }}
-                    transition={{ repeat: Infinity, duration: 1 }}
-                    className="text-red-500 mb-4"
-                  >
-                    <AlertTriangle size={60} />
-                  </motion.div>
-                  <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Game Over</h2>
-                  <p className="text-red-400 font-mono text-xs mb-6 uppercase tracking-[0.3em]">
-                    {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 'Temporal Decay'}
-                  </p>
-                  <div className="flex gap-4">
-                    <button
-                      onClick={handleReset}
-                      className="px-10 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-bold rounded-xl shadow-[0_0_30px_rgba(239,68,68,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
-                    >
-                      <RefreshCw size={20} />
-                      Try Again
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </section>
+        {/* Center: Game Board - Extracted and Memoized */}
+        <GameBoard 
+          currentLevel={currentLevel}
+          tiles={tiles}
+          ghostPath={ghostPath}
+          arrows={arrows}
+          removedIds={removedIds}
+          shakeId={shakeId}
+          hintId={hintId}
+          hasKeys={hasKeys}
+          activeTool={activeTool}
+          showVictory={showVictory}
+          showGameOver={showGameOver}
+          gameOverReason={gameOverReason}
+          currentLevelIdx={currentLevelIdx}
+          handleArrowClick={handleArrowClick}
+          setHoveredArrowId={setHoveredArrowId}
+          nextLevel={nextLevel}
+          handleReset={handleReset}
+        />
 
         {/* Right Sidebar */ }
         <aside className="flex flex-col gap-5 overflow-hidden">
@@ -951,14 +750,15 @@ export default function App() {
   );
 }
 
-function StatItem({ label, value }: { label: string, value: string | number }) {
+// Memoized Stat Item for efficiency
+const StatItem = React.memo(({ label, value }: { label: string, value: string | number }) => {
   return (
     <div className="text-center min-w-[60px]">
       <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-0.5">{label}</div>
       <div className="text-base lg:text-lg font-bold tabular-nums text-white">{value}</div>
     </div>
   );
-}
+});
 
 function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, label: string, onClick: () => void, disabled?: boolean }) {
   return (
@@ -973,7 +773,8 @@ function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, lab
   );
 }
 
-function ArrowIcon({ arrow }: { arrow: ArrowData }) {
+// Optimized Arrow Icon with memo
+const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
   const rotation = { up: 0, right: 90, down: 180, left: 270 }[arrow.dir];
   // Arrow colors from design
   const colorClass = {
@@ -1009,4 +810,258 @@ function ArrowIcon({ arrow }: { arrow: ArrowData }) {
       )}
     </div>
   );
-}
+});
+
+/**
+ * GameBoard Component: Memoized to prevent re-renders from timer updates.
+ */
+const GameBoard = React.memo(({ 
+  currentLevel, 
+  tiles, 
+  ghostPath, 
+  arrows, 
+  removedIds, 
+  shakeId, 
+  hintId, 
+  hasKeys, 
+  activeTool, 
+  showVictory, 
+  showGameOver, 
+  gameOverReason, 
+  currentLevelIdx, 
+  handleArrowClick, 
+  setHoveredArrowId,
+  nextLevel,
+  handleReset
+}: any) => {
+  return (
+    <section className="flex flex-col items-center justify-center relative touch-none">
+      <div 
+        className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
+          gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
+          gap: '8px',
+          width: 'min(90vw, 450px)',
+          height: 'min(90vw, 450px)',
+        }}
+      >
+        {/* Cell Grid Background */}
+        {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
+          <div key={i} className="bg-slate-800/50 rounded-lg" />
+        ))}
+
+        {/* Tiles: Conveyors, Gates, etc. */}
+        {tiles.map((tile: TileData, i: number) => (
+          <div 
+            key={`tile-${i}`}
+            className={`
+              absolute rounded-lg flex items-center justify-center opacity-60
+              ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
+              ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
+            `}
+            style={{
+              width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+              height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+              left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.x})`,
+              top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.y})`,
+            }}
+          >
+            {tile.type.startsWith('conveyor') && (
+              <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
+            )}
+            {tile.type.startsWith('gate') && (
+              tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
+            )}
+          </div>
+        ))}
+
+        {/* Ghost Path Indicator (Launch Beam) */}
+        <AnimatePresence>
+          {ghostPath && (() => {
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`;
+            const cellOffset = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.x})`;
+            const cellOffsetTop = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.y})`;
+            
+            const style: React.CSSProperties = {
+              position: 'absolute',
+              borderRadius: '12px',
+              boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)',
+              zIndex: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden'
+            };
+
+            const beamColor = 'rgba(34, 211, 238, 0.4)';
+            const fadeColor = 'rgba(34, 211, 238, 0)';
+
+            if (ghostPath.dir === 'right') {
+              style.left = cellOffset;
+              style.right = '12px';
+              style.top = cellOffsetTop;
+              style.height = cellSize;
+              style.background = `linear-gradient(to right, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'left') {
+              style.left = '12px';
+              style.width = `calc(${cellOffset} + ${cellSize} - 12px)`;
+              style.top = cellOffsetTop;
+              style.height = cellSize;
+              style.background = `linear-gradient(to left, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'down') {
+              style.left = cellOffset;
+              style.width = cellSize;
+              style.top = cellOffsetTop;
+              style.bottom = '12px';
+              style.background = `linear-gradient(to bottom, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'up') {
+              style.left = cellOffset;
+              style.width = cellSize;
+              style.top = '12px';
+              style.height = `calc(${cellOffsetTop} + ${cellSize} - 12px)`;
+              style.background = `linear-gradient(to top, ${beamColor}, ${fadeColor})`;
+            }
+
+            return (
+              <motion.div 
+                key="ghost-beam"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={style}
+              >
+                <motion.div 
+                  animate={{ opacity: [0.2, 0.5, 0.2] }}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
+                  className="w-full h-full bg-white/5"
+                />
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
+
+        {/* Arrows */}
+        <AnimatePresence mode="popLayout">
+          {arrows.map((arrow: ArrowData) => {
+            if (removedIds.has(arrow.id)) return null;
+            
+            const isShaking = shakeId === arrow.id;
+            const isHinted = hintId === arrow.id;
+            const isLocked = arrow.type === 'locked' && hasKeys;
+            
+            return (
+              <motion.button
+                key={arrow.id}
+                layoutId={arrow.id}
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ 
+                  scale: 1, 
+                  opacity: isLocked ? 0.4 : 1,
+                  x: isShaking ? [0, -5, 5, -5, 5, 0] : 0,
+                  filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
+                }}
+                exit={{ 
+                  x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
+                  y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
+                  opacity: 0,
+                  scale: 0.9,
+                  transition: { duration: 0.5, ease: "anticipate" }
+                }}
+                whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                whileTap={{ scale: isLocked ? 1 : 0.9 }}
+                onMouseEnter={() => setHoveredArrowId(arrow.id)}
+                onMouseLeave={() => setHoveredArrowId(null)}
+                onTouchStart={() => setHoveredArrowId(arrow.id)}
+                onTouchEnd={() => setHoveredArrowId(null)}
+                onClick={() => handleArrowClick(arrow)}
+                className={`
+                  absolute flex items-center justify-center rounded-lg transition-all duration-300
+                  ${isHinted ? 'bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
+                  ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
+                  ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
+                  ${arrow.type === 'key' ? 'bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
+                  ${arrow.type === 'rotator' ? 'bg-purple-500/10' : ''}
+                  ${arrow.type === 'shifter' ? 'bg-cyan-500/10' : ''}
+                  ${arrow.type === 'switch' ? 'bg-pink-500/10 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
+                  z-10
+                `}
+                style={{
+                  width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                  height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                  left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.x})`,
+                  top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.y})`,
+                }}
+              >
+                <ArrowIcon arrow={arrow} />
+                {isLocked && <div className="absolute inset-0 flex items-center justify-center"><Lock size={12} className="text-white/40" /></div>}
+                {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
+
+        {/* Victory Modal */}
+        <AnimatePresence>
+          {showVictory && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-[#22d3ee]/20"
+            >
+              <motion.div
+                animate={{ y: [0, -10, 0], scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="text-yellow-400 mb-4"
+              >
+                <Trophy size={60} />
+              </motion.div>
+              <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Stage Clear</h2>
+              <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
+              <button
+                onClick={currentLevelIdx < LEVELS.length - 1 ? nextLevel : handleReset}
+                className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+              >
+                {currentLevelIdx < LEVELS.length - 1 ? 'Next Level' : 'Play Again'}
+                <ChevronRight size={20} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Game Over Modal */}
+        <AnimatePresence>
+          {showGameOver && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-red-500/20"
+            >
+              <motion.div
+                animate={{ rotate: [0, -10, 10, 0] }}
+                transition={{ repeat: Infinity, duration: 1 }}
+                className="text-red-500 mb-4"
+              >
+                <AlertTriangle size={60} />
+              </motion.div>
+              <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Game Over</h2>
+              <p className="text-red-400 font-mono text-xs mb-6 uppercase tracking-[0.3em]">
+                {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 'Temporal Decay'}
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleReset}
+                  className="px-10 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-bold rounded-xl shadow-[0_0_30px_rgba(239,68,68,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                >
+                  <RefreshCw size={20} />
+                  Try Again
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </section>
+  );
+});
