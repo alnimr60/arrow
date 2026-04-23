@@ -976,13 +976,11 @@ const GameBoard = React.memo(({
                 onClick={() => handleArrowClick(arrow)}
                 className={`
                   absolute flex items-center justify-center rounded-lg transition-all duration-300
-                  ${isHinted ? 'bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
+                  ${isHinted ? 'shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
                   ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
                   ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
-                  ${arrow.type === 'key' ? 'bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
-                  ${arrow.type === 'rotator' ? 'bg-purple-500/10' : ''}
-                  ${arrow.type === 'shifter' ? 'bg-cyan-500/10' : ''}
-                  ${arrow.type === 'switch' ? 'bg-pink-500/10 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
+                  ${arrow.type === 'switch' ? 'shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
+                  ${arrow.type === 'key' ? 'shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
                   z-10
                 `}
                 style={{
@@ -990,6 +988,11 @@ const GameBoard = React.memo(({
                   height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
                   left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.x})`,
                   top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.y})`,
+                  backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
+                                   arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
+                                   arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
+                                   arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' :
+                                   isHinted ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)'
                 }}
               >
                 <ArrowIcon arrow={arrow} />
