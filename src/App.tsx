@@ -1,545 +1,1012 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useCallback, useMemo, ReactNode, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  Dimensions, 
-  StyleSheet, 
-  SafeAreaView, 
-  ScrollView, 
-  Modal, 
-  Platform,
-  Alert
-} from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { 
-  LayoutGrid, 
-  Volume2, 
-  VolumeX, 
-  RotateCcw, 
-  RotateCw, 
-  Box, 
+  ArrowUp, 
+  ArrowDown, 
+  ArrowLeft, 
   ArrowRight, 
-  Lock, 
-  CheckCircle2, 
+  RotateCcw, 
+  ChevronRight, 
+  ChevronLeft, 
+  Lightbulb, 
+  CheckCircle2,
+  Undo2,
+  Trophy,
+  LayoutGrid,
   X,
-  History,
-  Timer,
-  MousePointer2,
-  Cpu
-} from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import tw from './lib/tailwind';
+  Lock,
+  Move,
+  Volume2,
+  VolumeX,
+  Clock,
+  AlertTriangle,
+  RotateCcw as RefreshCw
+} from 'lucide-react';
 import { Direction, ArrowData, Level, TileData, ToolboxConfig } from './types';
 import { LEVELS } from './levels';
+import { soundService } from './services/soundService';
 
-// Simple Haptic helper
-const triggerHaptic = (type: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) => {
-  if (Platform.OS !== 'web') {
-    Haptics.impactAsync(type);
-  }
-};
-
-const UI_WIDTH = Dimensions.get('window').width;
-const UI_HEIGHT = Dimensions.get('window').height;
-
-const StatItem = ({ label, value }: { label: string, value: string | number }) => (
-  <View style={tw`items-center px-3`}>
-    <Text style={tw`text-[10px] text-text-dim uppercase font-bold tracking-widest`}>{label}</Text>
-    <Text style={tw`text-white font-black text-lg`}>{value}</Text>
-  </View>
-);
-
-const getRotation = (dir: Direction) => {
-  switch (dir) {
-    case 'up': return '0deg';
-    case 'right': return '90deg';
-    case 'down': return '180deg';
-    case 'left': return '270deg';
-    default: return '0deg';
-  }
-};
+/**
+ * Arrow Escape Puzzle
+ * A logic game where you untangle arrows by removing them in the correct order.
+ */
 
 export default function App() {
-  const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
+  const [currentLevelIdx, setCurrentLevelIdx] = useState(() => {
+    const saved = localStorage.getItem('arrow-escape-level');
+    return saved ? Math.min(parseInt(saved), LEVELS.length - 1) : 0;
+  });
+  const [maxReachedLevel, setMaxReachedLevel] = useState(() => {
+    const saved = localStorage.getItem('arrow-escape-max-level');
+    return saved ? parseInt(saved) : 0;
+  });
+  
   const [arrows, setArrows] = useState<ArrowData[]>([]);
-  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [tiles, setTiles] = useState<TileData[]>([]);
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [history, setHistory] = useState<{ arrows: ArrowData[], removedIds: Set<string>, tiles: TileData[], toolbox: ToolboxConfig, clicks?: number }[]>([]);
   const [toolbox, setToolbox] = useState<ToolboxConfig>({ rotations: 0, shifts: 0 });
-  const [clickCount, setClickCount] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [activeTool, setActiveTool] = useState<'rotate' | null>(null);
+  const [hoveredArrowId, setHoveredArrowId] = useState<string | null>(null);
+  const [shakeId, setShakeId] = useState<string | null>(null);
+  const [hintId, setHintId] = useState<string | null>(null);
   const [showVictory, setShowVictory] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
-  const [gameOverReason, setGameOverReason] = useState<'time' | 'clicks' | null>(null);
+  const [gameOverReason, setGameOverReason] = useState<'clicks' | 'time' | null>(null);
+  const [clickCount, setClickCount] = useState(0);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [showLevelSelector, setShowLevelSelector] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [history, setHistory] = useState<any[]>([]);
-  const [maxReachedLevel, setMaxReachedLevel] = useState(0);
-  const [activeTool, setActiveTool] = useState<'rotate' | 'shift' | null>(null);
-
+  const activeLevelRef = useRef<HTMLButtonElement>(null);
+  const [isMuted, setIsMuted] = useState(() => {
+    const saved = localStorage.getItem('arrow-escape-muted');
+    return saved === 'true';
+  });
+  
   const currentLevel = LEVELS[currentLevelIdx];
 
-  // Persistence
   useEffect(() => {
-    AsyncStorage.getItem('maxLevel').then(val => {
-      if (val) setMaxReachedLevel(parseInt(val));
-    });
-  }, []);
+    localStorage.setItem('arrow-escape-muted', isMuted.toString());
+  }, [isMuted]);
 
-  const saveMaxLevel = (lvl: number) => {
-    if (lvl > maxReachedLevel) {
-      setMaxReachedLevel(lvl);
-      AsyncStorage.setItem('maxLevel', lvl.toString());
+  useEffect(() => {
+    if (currentLevelIdx > maxReachedLevel) {
+      setMaxReachedLevel(currentLevelIdx);
+      localStorage.setItem('arrow-escape-max-level', currentLevelIdx.toString());
     }
-  };
+  }, [currentLevelIdx, maxReachedLevel]);
 
-  const initLevel = useCallback((idx: number) => {
-    const level = LEVELS[idx];
-    setArrows([...level.arrows]);
+  // Timer Effect: Responsive 100ms update for "counting moments"
+  useEffect(() => {
+    if (timeLeft === null || timeLeft <= 0 || showVictory || showGameOver) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev === null) return null;
+        const next = Math.max(0, prev - 0.1);
+        
+        if (next <= 0 && !showVictory) {
+          clearInterval(timer);
+          setGameOverReason('time');
+          setShowGameOver(true);
+          if (!isMuted) soundService.playError();
+          return 0;
+        }
+        return next;
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [showVictory, showGameOver, isMuted, timeLeft === null]);
+
+  // Initial Level
+  useEffect(() => {
+    setArrows(currentLevel.arrows);
+    setTiles(currentLevel.tiles || []);
+    setToolbox(currentLevel.toolbox || { rotations: 0, shifts: 0 });
     setRemovedIds(new Set());
-    setTiles(level.tiles ? JSON.parse(JSON.stringify(level.tiles)) : []);
-    setToolbox(level.toolbox ? { ...level.toolbox } : { rotations: 0, shifts: 0 });
-    setClickCount(0);
-    setTimeLeft(level.timeLimit || 60);
-    setHasStarted(false);
+    setHistory([]);
+    setHintId(null);
     setShowVictory(false);
     setShowGameOver(false);
     setGameOverReason(null);
-    setHistory([]);
-    setActiveTool(null);
-  }, []);
+    setClickCount(0);
+    setTimeLeft(currentLevel.timeLimit || null);
+    localStorage.setItem('arrow-escape-level', currentLevelIdx.toString());
+  }, [currentLevelIdx, currentLevel]);
 
-  useEffect(() => {
-    initLevel(currentLevelIdx);
-  }, [currentLevelIdx, initLevel]);
+  const hasKeys = useMemo(() => {
+    return arrows.some(a => !removedIds.has(a.id) && a.type === 'key');
+  }, [arrows, removedIds]);
 
-  // Timer logic
-  useEffect(() => {
-    let interval: any;
-    if (hasStarted && timeLeft > 0 && !showVictory && !showGameOver) {
-      interval = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 0.1) {
-            setGameOverReason('time');
-            setShowGameOver(true);
-            return 0;
-          }
-          return prev - 0.1;
-        });
-      }, 100);
+  // Check if an arrow is blocked by any other remaining arrow or closed gate
+  const isBlocked = useCallback((arrow: ArrowData, allArrows: ArrowData[], removed: Set<string>, currentTiles: TileData[]) => {
+    if (arrow.type === 'locked' && hasKeys) {
+      return true;
     }
-    return () => clearInterval(interval);
-  }, [hasStarted, timeLeft, showVictory, showGameOver]);
 
-  const isBlocked = (arrow: ArrowData, all: ArrowData[], removed: Set<string>, curTiles: TileData[]) => {
     const { x, y, dir } = arrow;
+    const remaining = allArrows.filter(a => !removed.has(a.id));
     
     // Check arrows
-    const others = all.filter(a => !removed.has(a.id) && a.id !== arrow.id);
-    const arrowBlocked = others.some(a => {
-      if (dir === 'up') return a.x === x && a.y < y;
-      if (dir === 'down') return a.x === x && a.y > y;
-      if (dir === 'left') return a.y === y && a.x < x;
-      if (dir === 'right') return a.y === y && a.x > x;
-      return false;
-    });
-    if (arrowBlocked) return true;
+    const isArrowBlocked = (() => {
+      switch (dir) {
+        case 'up': return remaining.some(a => a.x === x && a.y < y);
+        case 'down': return remaining.some(a => a.x === x && a.y > y);
+        case 'left': return remaining.some(a => a.y === y && a.x < x);
+        case 'right': return remaining.some(a => a.y === y && a.x > x);
+      }
+    })();
+    if (isArrowBlocked) return true;
 
     // Check Gates
-    const gateBlocked = curTiles.some(t => {
+    const isGateBlocked = currentTiles.some(t => {
       if (t.isOpen) return false;
-      const isGate = t.type === 'gate-vertical' || t.type === 'gate-horizontal';
-      if (!isGate) return false;
-      if (dir === 'up') return t.x === x && t.y < y;
-      if (dir === 'down') return t.x === x && t.y > y;
-      if (dir === 'left') return t.y === y && t.x < x;
-      if (dir === 'right') return t.y === y && t.x > x;
-      return false;
+      if (t.type !== 'gate-vertical' && t.type !== 'gate-horizontal') return false;
+      switch (dir) {
+        case 'up': return t.x === x && t.y < y;
+        case 'down': return t.x === x && t.y > y;
+        case 'left': return t.y === y && t.x < x;
+        case 'right': return t.y === y && t.x > x;
+      }
     });
 
-    return gateBlocked;
+    return isGateBlocked;
+  }, [hasKeys]);
+
+  const rotateDir = (dir: Direction): Direction => {
+    const next: Record<Direction, Direction> = {
+      up: 'right',
+      right: 'down',
+      down: 'left',
+      left: 'up'
+    };
+    return next[dir];
   };
 
-  const handleArrowClick = (arrow: ArrowData) => {
+  const handleArrowClick = useCallback((arrow: ArrowData) => {
     if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
-    
-    if (!hasStarted) setHasStarted(true);
-    triggerHaptic();
 
-    // TOOL LOGIC
-    if (activeTool === 'rotate' && toolbox.rotations > 0) {
-      setHistory(prev => [...prev, { arrows: [...arrows], removedIds: new Set(removedIds), toolbox: { ...toolbox }, tiles: JSON.parse(JSON.stringify(tiles)), clicks: clickCount }]);
-      setArrows(prev => prev.map(a => a.id === arrow.id ? { ...a, dir: rotateDir(a.dir) } : a));
-      setToolbox(prev => ({ ...prev, rotations: prev.rotations - 1 }));
-      setActiveTool(null);
-      setClickCount(prev => prev + 1);
-      return;
+    // Tactical Haptics for iPhone/Mobile
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(10);
     }
 
-    // GAMEPLAY LOGIC
-    // Lock Check
-    if (arrow.type === 'locked') {
-      const keysRemaining = arrows.some(a => !removedIds.has(a.id) && a.type === 'key');
-      if (keysRemaining) {
-        triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-        return;
-      }
-    }
-
-    if (isBlocked(arrow, arrows, removedIds, tiles)) {
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-      return;
-    }
-
-    // Capture state for undo
-    setHistory(prev => [...prev, { 
-      arrows: JSON.parse(JSON.stringify(arrows)), 
-      removedIds: new Set(removedIds), 
-      toolbox: { ...toolbox }, 
-      tiles: JSON.parse(JSON.stringify(tiles)), 
-      clicks: clickCount 
-    }]);
-
+    // Click limit applies to every click on an active arrow
     const newClickCount = clickCount + 1;
     setClickCount(newClickCount);
 
-    // Remove logic
+    if (activeTool === 'rotate') {
+      if (toolbox.rotations > 0) {
+        useTool('rotate', arrow.id);
+        setActiveTool(null);
+      }
+      return;
+    }
+    
+    if (isBlocked(arrow, arrows, removedIds, tiles)) {
+      if (!isMuted) soundService.playError();
+      setShakeId(arrow.id);
+      setTimeout(() => setShakeId(null), 500);
+      
+      // IMMEDIATE FAILURE CHECK: Clicks Exhausted on error
+      if (currentLevel.clickLimit && newClickCount >= currentLevel.clickLimit) {
+        setGameOverReason('clicks');
+        setShowGameOver(true);
+        if (!isMuted) soundService.playError();
+      }
+      return;
+    }
+
+    if (!isMuted) soundService.playRemove();
+
+    // Save state for undo
+    setHistory(prev => [...prev, { 
+      arrows: [...arrows], 
+      removedIds: new Set(removedIds), 
+      tiles: [...tiles], 
+      toolbox: { ...toolbox }, 
+      clicks: clickCount 
+    }]);
+    
     const newRemoved = new Set(removedIds);
     newRemoved.add(arrow.id);
     setRemovedIds(newRemoved);
+    setHintId(null);
 
-    // MECHANICS EFFECTS
-    let newArrows = [...arrows];
-    let newTiles = JSON.parse(JSON.stringify(tiles));
-
-    // Switch: Toggles all gates
-    if (arrow.type === 'switch') {
-      newTiles = newTiles.map((t: TileData) => 
-        t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t
-      );
+    // Level complete check - clicks failure check
+    if (newRemoved.size < arrows.length && currentLevel.clickLimit && newClickCount >= currentLevel.clickLimit) {
+      setTimeout(() => {
+        // Double check they didn't finish with the last click
+        setRemovedIds(current => {
+          if (current.size < arrows.length) {
+            setGameOverReason('clicks');
+            setShowGameOver(true);
+            if (!isMuted) soundService.playError();
+          }
+          return current;
+        });
+      }, 600);
     }
 
-    // Rotator: Rotates neighbors
+    // Global Effect: Switch toggles gates
+    if (arrow.type === 'switch') {
+      setTiles(prev => prev.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t)));
+    }
+
+    // Dynamic Effect: Rotator
     if (arrow.type === 'rotator') {
-      const rotateCW = (d: Direction): Direction => ({ up: 'right', right: 'down', down: 'left', left: 'up' } as Record<Direction, Direction>)[d];
-      newArrows = newArrows.map(a => {
-        if (newRemoved.has(a.id)) return a;
-        if (Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1) {
-          return { ...a, dir: rotateCW(a.dir) };
+      const nextArrows = arrows.map(a => {
+        const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
+        if (isNeighbor && !newRemoved.has(a.id)) {
+          return { ...a, dir: rotateDir(a.dir) };
         }
         return a;
       });
+      setArrows(nextArrows);
     }
 
-    // Shifter: Moves others in path
+    // Dynamic Effect: Shifter + Conveyor Physics
     if (arrow.type === 'shifter') {
-      newArrows = newArrows.map(a => {
+      const nextArrows = arrows.map(a => {
         if (newRemoved.has(a.id)) return a;
+
         const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
         const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
+
         if (isSameCol || isSameRow) {
           let nx = a.x, ny = a.y;
           if (arrow.dir === 'up') ny--;
           if (arrow.dir === 'down') ny++;
           if (arrow.dir === 'left') nx--;
           if (arrow.dir === 'right') nx++;
+
+          // Safe Conveyor logic: Iterative to prevent stack overflow
+          const getFinalPlatformPos = (startX: number, startY: number): { x: number, y: number } => {
+            let cx = startX, cy = startY;
+            const visited = new Set<string>();
+            visited.add(`${cx},${cy}`);
+
+            while (true) {
+              const tile = tiles.find(t => t.x === cx && t.y === cy);
+              if (!tile) break;
+
+              let fx = cx, fy = cy;
+              if (tile.type === 'conveyor-up') fy--;
+              if (tile.type === 'conveyor-down') fy++;
+              if (tile.type === 'conveyor-left') fx--;
+              if (tile.type === 'conveyor-right') fx++;
+
+              // Bound check
+              if (fx < 0 || fx >= currentLevel.gridSize || fy < 0 || fy >= currentLevel.gridSize) break;
+              
+              // Blocked check
+              const isBlockedAt = arrows.some(other => !newRemoved.has(other.id) && other.x === fx && other.y === fy) ||
+                                tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === fx && t.y === fy);
+              if (isBlockedAt) break;
+
+              // Cycle check
+              if (visited.has(`${fx},${fy}`)) break;
+
+              cx = fx;
+              cy = fy;
+              visited.add(`${cx},${cy}`);
+            }
+            return { x: cx, y: cy };
+          };
+
+          if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
           
-          // Basic bounds check for shifters in real-time
-          if (nx >= 0 && nx < currentLevel.gridSize && ny >= 0 && ny < currentLevel.gridSize) {
-             const occupied = newArrows.some(other => !newRemoved.has(other.id) && other.id !== a.id && other.x === nx && other.y === ny);
-             if (!occupied) {
-               return { ...a, x: nx, y: ny };
-             }
+          const isOccupied = arrows.some(other => !newRemoved.has(other.id) && other.x === nx && other.y === ny) ||
+                           tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+
+          if (!isOccupied) {
+            const final = getFinalPlatformPos(nx, ny);
+            return { ...a, x: final.x, y: final.y };
           }
         }
         return a;
       });
+      setArrows(nextArrows);
     }
 
-    setArrows(newArrows);
-    setTiles(newTiles);
-
-    // Win condition
     if (newRemoved.size === arrows.length) {
-      setShowVictory(true);
-      saveMaxLevel(currentLevelIdx + 1);
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-    } else if (currentLevel.clickLimit && newClickCount >= currentLevel.clickLimit) {
-      setGameOverReason('clicks');
-      setShowGameOver(true);
+      setTimeout(() => {
+        try {
+          if (!isMuted) soundService.playSuccess();
+        } catch (e) {
+          console.warn("Audio failed to play", e);
+        }
+        setShowVictory(true);
+      }, 800);
     }
+  }, [arrows, removedIds, isBlocked, isMuted, currentLevel, tiles, toolbox, clickCount, showVictory, showGameOver]);
+
+  const useTool = (type: 'rotate' | 'shift', targetArrowId: string) => {
+    if (!isMuted) soundService.playClick();
+
+    // Tactical Haptics for iPhone/Mobile
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(20);
+    }
+    setHistory(prev => [...prev, { 
+      arrows: [...arrows], 
+      removedIds: new Set(removedIds), 
+      tiles: [...tiles], 
+      toolbox: { ...toolbox },
+      clicks: clickCount
+    }]);
+    
+    if (type === 'rotate' && toolbox.rotations > 0) {
+      setArrows(prev => prev.map(a => a.id === targetArrowId ? { ...a, dir: rotateDir(a.dir) } : a));
+      setToolbox(prev => ({ ...prev, rotations: prev.rotations - 1 }));
+    }
+    // Shifter tool could be implemented similarly if needed
   };
 
-  const rotateDir = (d: Direction): Direction => {
-    const order: Direction[] = ['up', 'right', 'down', 'left'];
-    return order[(order.indexOf(d) + 1) % 4];
-  };
-
-  const undo = () => {
-    if (history.length === 0) return;
-    triggerHaptic();
-    const last = history[history.length - 1];
+  const handleUndo = () => {
+    if (history.length === 0 || showVictory) return;
+    if (!isMuted) soundService.playClick();
+    const last = history[history.length - 1] as any;
     setArrows(last.arrows);
     setRemovedIds(last.removedIds);
-    setToolbox(last.toolbox);
     setTiles(last.tiles);
-    setClickCount(last.clicks);
+    setToolbox(last.toolbox);
+    if (last.clicks !== undefined) setClickCount(last.clicks);
+    else if (last.moves !== undefined) setClickCount(last.moves); // Support legacy history
     setHistory(prev => prev.slice(0, -1));
+    setShowVictory(false);
+    setShowGameOver(false);
+    setGameOverReason(null);
+    setHintId(null);
   };
 
-  const boardSize = Math.min(UI_WIDTH * 0.9, 450);
-  const cellSize = boardSize / currentLevel.gridSize;
+  const handleReset = () => {
+    if (!isMuted) soundService.playClick();
+    setArrows(currentLevel.arrows);
+    setTiles(currentLevel.tiles || []);
+    setToolbox(currentLevel.toolbox || { rotations: 0, shifts: 0 });
+    setRemovedIds(new Set());
+    setHistory([]);
+    setHintId(null);
+    setShowVictory(false);
+    setShowGameOver(false);
+    setGameOverReason(null);
+    setClickCount(0);
+    setTimeLeft(currentLevel.timeLimit || null);
+  };
+
+  const handleHint = () => {
+    if (!isMuted) soundService.playClick();
+    const removable = arrows.find(a => !removedIds.has(a.id) && !isBlocked(a, arrows, removedIds));
+    if (removable) {
+      setHintId(removable.id);
+    }
+  };
+
+  const nextLevel = () => {
+    if (!isMuted) soundService.playClick();
+    if (currentLevelIdx < LEVELS.length - 1) {
+      setCurrentLevelIdx(prev => prev + 1);
+    }
+  };
+
+  const selectLevel = (idx: number) => {
+    if (!isMuted) soundService.playClick();
+    setCurrentLevelIdx(idx);
+    setShowLevelSelector(false);
+  };
+
+  // Auto-scroll to current level when menu opens
+  useEffect(() => {
+    if (showLevelSelector && activeLevelRef.current) {
+      setTimeout(() => {
+        activeLevelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+  }, [showLevelSelector]);
+
+  // Center: Game Board
+  const ghostPath = useMemo(() => {
+    if (!hoveredArrowId || activeTool) return null;
+    const arrow = arrows.find(a => a.id === hoveredArrowId);
+    if (!arrow || removedIds.has(arrow.id)) return null;
+    // Only show path for launchable arrows
+    if (isBlocked(arrow, arrows, removedIds, tiles)) return null;
+    return arrow;
+  }, [hoveredArrowId, arrows, removedIds, tiles, isBlocked, activeTool]);
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-bg-main`}>
-      <StatusBar style="light" />
-      
+    <div className="min-h-screen text-[#f8fafc] font-sans flex flex-col">
       {/* Header */}
-      <View style={tw`h-16 border-b border-white/10 flex-row items-center justify-between px-4`}>
-        <TouchableOpacity 
-          onPress={() => setShowLevelSelector(true)}
-          style={tw`bg-white/5 p-2 rounded-xl border border-white/10 flex-row items-center`}
-        >
-          <LayoutGrid size={18} color="#22d3ee" />
-          <Text style={tw`text-white/60 ml-2 font-bold text-xs uppercase tracking-widest`}>Levels</Text>
-        </TouchableOpacity>
-
-        <View style={tw`flex-row items-center`}>
+      <nav 
+        className="h-20 lg:h-24 px-6 lg:px-10 flex items-center justify-between border-b border-white/10 bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-40"
+        style={{ paddingTop: 'var(--safe-top)', height: 'calc(5rem + var(--safe-top))' }}
+      >
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setShowLevelSelector(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[#22d3ee] transition-all border border-white/5 hover:border-[#22d3ee]/30 group"
+          >
+            <LayoutGrid size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+            <span className="text-sm font-bold uppercase tracking-wider hidden md:block">Stages</span>
+          </button>
+          <div className="text-xl lg:text-2xl font-extrabold tracking-tighter bg-gradient-to-br from-[#22d3ee] to-[#818cf8] bg-clip-text text-transparent uppercase hidden sm:block">
+            Arrow Escape
+          </div>
+        </div>
+        <div className="flex gap-4 lg:gap-8 items-center">
+          <button 
+            onClick={() => setIsMuted(prev => !prev)}
+            className="p-2 text-[#94a3b8] hover:text-[#22d3ee] transition-colors"
+            title={isMuted ? "Unmute" : "Mute"}
+          >
+            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+          </button>
           <StatItem label="Stage" value={currentLevelIdx + 1} />
-          <StatItem label="Clicks" value={`${clickCount}/${currentLevel.clickLimit || '∞'}`} />
-        </View>
+          <StatItem label="Clicks" value={clickCount} />
+          <StatItem label="Goal" value={currentLevel.clickLimit || '-'} />
+        </div>
+      </nav>
 
-        <TouchableOpacity 
-          onPress={() => setIsMuted(!isMuted)}
-          style={tw`p-2 bg-white/5 rounded-full`}
-        >
-          {isMuted ? <VolumeX size={18} color="#94a3b8" /> : <Volume2 size={18} color="#22d3ee" />}
-        </TouchableOpacity>
-      </View>
+      {/* Main Container */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full" style={{ paddingBottom: 'calc(2.5rem + var(--safe-bottom))' }}>
+        {/* Left Sidebar */}
+        <aside className="hidden lg:flex flex-col gap-5">
+          <div className="glass-panel rounded-[20px] p-6">
+            <span className="inline-block px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-xs font-bold mb-4 uppercase tracking-wider">
+              Stage {currentLevelIdx + 1}
+            </span>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-widest mb-2">Core Logic</h3>
+                <p className="text-sm text-[#94a3b8] leading-relaxed">
+                  An arrow can only launch if its path is clear.
+                </p>
+              </div>
 
-      <ScrollView contentContainerStyle={tw`flex-grow items-center justify-center p-4`}>
-        {/* Game Stats Bar */}
-        <View style={tw`w-full flex-row justify-between items-center mb-6 px-2`}>
-           <View style={tw`flex-row items-center bg-white/10 px-5 py-2.5 rounded-3xl border border-white/20 shadow-lg`}>
-              <Timer size={18} color="#22d3ee" style={tw`mr-2`} />
-              <Text style={tw`text-white font-black text-xl tabular-nums`}>{timeLeft.toFixed(1)}s</Text>
-           </View>
-           
-           <TouchableOpacity 
-             onPress={() => initLevel(currentLevelIdx)}
-             style={tw`p-3.5 bg-white/10 rounded-3xl border border-white/20 shadow-lg`}
-           >
-             <RotateCcw size={22} color="#22d3ee" />
-           </TouchableOpacity>
-        </View>
+              {arrows.some(a => a.type === 'rotator' || a.type === 'key' || a.type === 'shifter') && (
+                <div className="pt-4 border-t border-white/5 space-y-3">
+                  <h3 className="text-xs font-bold text-[#22d3ee] uppercase tracking-widest mb-2">Dynamic Objects</h3>
+                  
+                  {arrows.some(a => a.type === 'rotator') && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                         <RotateCcw size={10} className="text-purple-400" />
+                      </div>
+                      <p className="text-[11px] text-[#94a3b8]"><b>Rotator:</b> Rotates adjacent arrows 90° on exit.</p>
+                    </div>
+                  )}
 
-        {/* Board Container */}
-        <View style={[tw`bg-slate-900 border-4 border-slate-800 rounded-[40px] p-2 relative shadow-2xl overflow-hidden`, { width: boardSize + 20, height: boardSize + 20 }]}>
-           {/* Grid Pattern */}
-           {[...Array(currentLevel.gridSize)].map((_, i) => (
-             <React.Fragment key={i}>
-                <View style={[tw`absolute bg-white/5`, { left: (i + 1) * cellSize + 8, top: 10, bottom: 10, width: 2 }]} />
-                <View style={[tw`absolute bg-white/5`, { top: (i + 1) * cellSize + 8, left: 10, right: 10, height: 2 }]} />
-             </React.Fragment>
-           ))}
+                  {arrows.some(a => a.type === 'key') && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                         <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
+                      </div>
+                      <p className="text-[11px] text-[#94a3b8]"><b>Key:</b> Remove to unlock chained arrows.</p>
+                    </div>
+                  )}
 
-           {/* Tiles (Gates and Conveyors) */}
-           {tiles.map((tile, tidx) => (
-             <View
-               key={`tile-${tidx}`}
-               style={[
-                 tw`absolute items-center justify-center`,
-                 { 
-                   width: cellSize * 1, 
-                   height: cellSize * 1,
-                   left: tile.x * cellSize + 10,
-                   top: tile.y * cellSize + 10,
-                 }
-               ]}
-             >
-               {tile.type.startsWith('gate') && (
-                 <View style={[
-                   tw`border-4 rounded-xl`, 
-                   { width: cellSize * 0.9, height: cellSize * 0.9, borderColor: tile.isOpen ? '#22d3ee20' : '#f8717180' },
-                   tile.isOpen && tw`bg-accent-cyan/5`
-                 ]}>
-                    <Lock size={cellSize * 0.3} color={tile.isOpen ? '#22d3ee40' : '#ef4444'} style={tw`m-auto`} />
-                 </View>
-               )}
-               {tile.type.startsWith('conveyor') && (
-                 <View style={[
-                   tw`bg-white/5 rounded-full`, 
-                   { 
-                     width: cellSize * 0.7, height: cellSize * 0.7,
-                     transform: [{ rotate: tile.type === 'conveyor-up' ? '0deg' : tile.type === 'conveyor-right' ? '90deg' : tile.type === 'conveyor-down' ? '180deg' : '270deg' }]
-                    }
-                 ]}>
-                    <ArrowRight size={cellSize * 0.4} color="#ffffff10" style={tw`m-auto`} />
-                 </View>
-               )}
-             </View>
-           ))}
+                  {arrows.some(a => a.type === 'shifter') && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                         <Move size={10} className="text-cyan-400" />
+                      </div>
+                      <p className="text-[11px] text-[#94a3b8]"><b>Shifter:</b> Shifts its row/column on exit.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
-           {/* Arrows */}
-           {arrows.map((arrow) => {
-             if (removedIds.has(arrow.id)) return null;
-             const isLocked = arrow.type === 'locked' && arrows.some(a => !removedIds.has(a.id) && a.type === 'key');
-             
-             return (
-               <TouchableOpacity
-                 key={arrow.id}
-                 activeOpacity={0.8}
-                 onPress={() => handleArrowClick(arrow)}
-                 style={[
-                   tw`absolute items-center justify-center rounded-2xl shadow-lg border-b-4`,
-                   { 
-                     width: cellSize * 0.82, 
-                     height: cellSize * 0.82,
-                     left: arrow.x * cellSize + (cellSize * 0.09) + 10,
-                     top: arrow.y * cellSize + (cellSize * 0.09) + 10,
-                     backgroundColor: '#1e293b',
-                     borderColor: '#0f172a',
-                   },
-                   arrow.type === 'rotator' && tw`bg-indigo-900 border-indigo-950`,
-                   arrow.type === 'key' && tw`bg-amber-900 border-amber-950`,
-                   arrow.type === 'switch' && tw`bg-emerald-900 border-emerald-950`,
-                   arrow.type === 'shifter' && tw`bg-fuchsia-900 border-fuchsia-950`,
-                   isLocked && tw`opacity-50 grayscale bg-slate-800`
-                 ]}
-               >
-                 {/* Visual Indicators */}
-                 <View style={[
-                   tw`w-full h-full items-center justify-center`,
-                   { transform: [{ rotate: getRotation(arrow.dir) }] }
-                 ]}>
-                    {arrow.type === 'locked' ? (
-                      <Lock size={cellSize * 0.45} color={isLocked ? "#94a3b8" : "#22d3ee"} />
-                    ) : arrow.type === 'rotator' ? (
-                      <RotateCw size={cellSize * 0.45} color="#818cf8" />
-                    ) : arrow.type === 'switch' ? (
-                      <Cpu size={cellSize * 0.45} color="#34d399" />
-                    ) : arrow.type === 'shifter' ? (
-                      <MousePointer2 size={cellSize * 0.45} color="#e879f9" />
-                    ) : (
-                      <Box size={cellSize * 0.55} color={arrow.type === 'key' ? '#fbbf24' : '#22d3ee'} style={tw`absolute opacity-20`} />
+          <div className="glass-panel rounded-[20px] p-6">
+            <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold">Stage Archive</div>
+            <button 
+              onClick={() => setShowLevelSelector(true)}
+              className="w-full py-2.5 mb-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-[#22d3ee] transition-all flex items-center justify-center gap-2"
+            >
+              <LayoutGrid size={14} />
+              Browse All
+            </button>
+            <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {LEVELS.slice(Math.max(0, currentLevelIdx - 10), Math.min(LEVELS.length, currentLevelIdx + 15)).map((_, i) => {
+                const idx = LEVELS.indexOf(_) ; // Adjusted to handle slice correctly
+                const actualIdx = i + Math.max(0, currentLevelIdx - 10);
+                return (
+                  <button
+                    key={actualIdx}
+                    onClick={() => setCurrentLevelIdx(actualIdx)}
+                    className={`
+                      aspect-square rounded-md flex items-center justify-center text-[10px] font-bold transition-all
+                      ${currentLevelIdx === actualIdx 
+                        ? 'bg-[#22d3ee]/20 border border-[#22d3ee] text-[#22d3ee]' 
+                        : 'bg-slate-800/80 border border-white/5 text-[#94a3b8] hover:border-white/20 hover:text-white'}
+                    `}
+                  >
+                    {actualIdx + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        {/* Center: Game Board */}
+        <section className="flex flex-col items-center justify-center relative touch-none">
+          <div 
+            className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
+              gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
+              gap: '8px',
+              width: 'min(90vw, 450px)',
+              height: 'min(90vw, 450px)',
+            }}
+          >
+            {/* Cell Grid Background */}
+            {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
+              <div key={i} className="bg-slate-800/50 rounded-lg" />
+            ))}
+
+            {/* Tiles: Conveyors, Gates, etc. */}
+            {tiles.map((tile, i) => (
+              <div 
+                key={`tile-${i}`}
+                className={`
+                  absolute rounded-lg flex items-center justify-center opacity-60
+                  ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
+                  ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
+                `}
+                style={{
+                  width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                  height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                  left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.x})`,
+                  top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.y})`,
+                }}
+              >
+                {tile.type.startsWith('conveyor') && (
+                  <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
+                )}
+                {tile.type.startsWith('gate') && (
+                  tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
+                )}
+              </div>
+            ))}
+
+            {/* Ghost Path Indicator (Launch Beam) */}
+            {ghostPath && (() => {
+              const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`;
+              const cellOffset = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.x})`;
+              const cellOffsetTop = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.y})`;
+              
+              const style: React.CSSProperties = {
+                position: 'absolute',
+                borderRadius: '12px',
+                boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)',
+                zIndex: 0,
+                pointerEvents: 'none',
+                overflow: 'hidden'
+              };
+
+              if (ghostPath.dir === 'right') {
+                style.left = cellOffset;
+                style.right = '12px';
+                style.top = cellOffsetTop;
+                style.height = cellSize;
+                style.background = 'linear-gradient(to right, rgba(34, 211, 238, 0.4), transparent)';
+              } else if (ghostPath.dir === 'left') {
+                style.left = '12px';
+                style.width = `calc(${cellOffset} + ${cellSize} - 12px)`;
+                style.top = cellOffsetTop;
+                style.height = cellSize;
+                style.background = 'linear-gradient(to left, rgba(34, 211, 238, 0.4), transparent)';
+              } else if (ghostPath.dir === 'down') {
+                style.left = cellOffset;
+                style.width = cellSize;
+                style.top = cellOffsetTop;
+                style.bottom = '12px';
+                style.background = 'linear-gradient(to bottom, rgba(34, 211, 238, 0.4), transparent)';
+              } else if (ghostPath.dir === 'up') {
+                style.left = cellOffset;
+                style.width = cellSize;
+                style.top = '12px';
+                style.height = `calc(${cellOffsetTop} + ${cellSize} - 12px)`;
+                style.background = 'linear-gradient(to top, rgba(34, 211, 238, 0.4), transparent)';
+              }
+
+              return (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  style={style}
+                >
+                  <motion.div 
+                    animate={{ opacity: [0.2, 0.5, 0.2] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                    className="w-full h-full bg-white/5"
+                  />
+                </motion.div>
+              );
+            })()}
+
+            {/* Arrows */}
+            <AnimatePresence mode="popLayout">
+              {arrows.map((arrow) => {
+                if (removedIds.has(arrow.id)) return null;
+                
+                const isShaking = shakeId === arrow.id;
+                const isHinted = hintId === arrow.id;
+                const isLocked = arrow.type === 'locked' && hasKeys;
+                
+                return (
+                  <motion.button
+                    key={arrow.id}
+                    layoutId={arrow.id}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ 
+                      scale: 1, 
+                      opacity: isLocked ? 0.4 : 1,
+                      x: isShaking ? [0, -5, 5, -5, 5, 0] : 0,
+                      filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
+                    }}
+                    exit={{ 
+                      x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
+                      y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
+                      opacity: 0,
+                      scale: 0.9,
+                      transition: { duration: 0.5, ease: "anticipate" }
+                    }}
+                    whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                    whileTap={{ scale: isLocked ? 1 : 0.9 }}
+                    onMouseEnter={() => setHoveredArrowId(arrow.id)}
+                    onMouseLeave={() => setHoveredArrowId(null)}
+                    onClick={() => handleArrowClick(arrow)}
+                    className={`
+                      absolute flex items-center justify-center rounded-lg transition-all duration-300
+                      ${isHinted ? 'bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
+                      ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
+                      ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
+                      ${arrow.type === 'key' ? 'bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
+                      ${arrow.type === 'rotator' ? 'bg-purple-500/10' : ''}
+                      ${arrow.type === 'shifter' ? 'bg-cyan-500/10' : ''}
+                      ${arrow.type === 'switch' ? 'bg-pink-500/10 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
+                      z-10
+                    `}
+                    style={{
+                      width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                      height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
+                      left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.x})`,
+                      top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.y})`,
+                    }}
+                  >
+                    <ArrowIcon arrow={arrow} />
+                    {isLocked && <div className="absolute inset-0 flex items-center justify-center"><Lock size={12} className="text-white/40" /></div>}
+                    {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
+                  </motion.button>
+                );
+              })}
+            </AnimatePresence>
+
+            {/* Victory Modal */}
+            <AnimatePresence>
+              {showVictory && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-[#22d3ee]/20"
+                >
+                  <motion.div
+                    animate={{ y: [0, -10, 0], scale: [1, 1.1, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    className="text-yellow-400 mb-4"
+                  >
+                    <Trophy size={60} />
+                  </motion.div>
+                  <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Stage Clear</h2>
+                  <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
+                  <button
+                    onClick={currentLevelIdx < LEVELS.length - 1 ? nextLevel : handleReset}
+                    className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                  >
+                    {currentLevelIdx < LEVELS.length - 1 ? 'Next Level' : 'Play Again'}
+                    <ChevronRight size={20} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Game Over Modal */}
+            <AnimatePresence>
+              {showGameOver && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-red-500/20"
+                >
+                  <motion.div
+                    animate={{ rotate: [0, -10, 10, 0] }}
+                    transition={{ repeat: Infinity, duration: 1 }}
+                    className="text-red-500 mb-4"
+                  >
+                    <AlertTriangle size={60} />
+                  </motion.div>
+                  <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Game Over</h2>
+                  <p className="text-red-400 font-mono text-xs mb-6 uppercase tracking-[0.3em]">
+                    {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 'Temporal Decay'}
+                  </p>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={handleReset}
+                      className="px-10 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-bold rounded-xl shadow-[0_0_30px_rgba(239,68,68,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                    >
+                      <RefreshCw size={20} />
+                      Try Again
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </section>
+
+        {/* Right Sidebar */ }
+        <aside className="flex flex-col gap-5 overflow-hidden">
+          <div className="glass-panel rounded-[20px] p-6 flex flex-col gap-5">
+            <div className="flex flex-col gap-3">
+              <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-widest px-1">Tactical Operations</h3>
+              
+              <button
+                onClick={handleReset}
+                className="w-full py-3.5 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.25)] flex items-center justify-center gap-2 hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all text-sm"
+              >
+                <RotateCcw size={18} />
+                Restart Mission
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleUndo}
+                  disabled={history.length === 0}
+                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all disabled:opacity-20 disabled:grayscale"
+                >
+                  <Undo2 size={16} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Undo</span>
+                </button>
+                <button
+                  onClick={handleHint}
+                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all"
+                >
+                  <Lightbulb size={16} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Hint</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-5 border-t border-white/5">
+              {(toolbox.rotations > 0 || toolbox.shifts > 0) ? (
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Equipment</h4>
+                  {toolbox.rotations > 0 && (
+                    <button 
+                      onClick={() => setActiveTool(activeTool === 'rotate' ? null : 'rotate')}
+                      className={`
+                        w-full py-2.5 rounded-xl border flex items-center justify-between px-4 transition-all
+                        ${activeTool === 'rotate' 
+                          ? 'bg-purple-500/20 border-purple-500 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]' 
+                          : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}
+                      `}
+                    >
+                      <div className="flex items-center gap-3">
+                        <RotateCcw size={14} className={activeTool === 'rotate' ? 'animate-spin-slow' : ''} />
+                        <span className="text-xs font-bold uppercase tracking-wider">Rotator Gear</span>
+                      </div>
+                      <span className="text-sm font-black opacity-60">x{toolbox.rotations}</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="px-1 italic text-[10px] text-slate-600">Standard issue deployment: No extra gear.</div>
+              )}
+            </div>
+
+            <div className="space-y-4 pt-5 border-t border-white/5">
+              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest font-bold px-1">Mission Telemetry</div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold">
+                    <Move size={12} className="text-indigo-400" />
+                    Clicks
+                  </div>
+                  <div className={`text-xl font-black tabular-nums transition-colors ${currentLevel.clickLimit && clickCount >= currentLevel.clickLimit - 3 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                    {clickCount}
+                    {currentLevel.clickLimit && <span className="text-slate-600 text-sm ml-1">/ {currentLevel.clickLimit}</span>}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold">
+                    <Clock size={12} className="text-cyan-400" />
+                    Time
+                  </div>
+                  <div className={`text-xl font-black tabular-nums transition-colors ${timeLeft !== null && timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                    {timeLeft === null ? '--:--' : (
+                      <span className="flex items-baseline gap-0.5">
+                        {Math.floor(timeLeft / 60)}:{Math.floor(timeLeft % 60).toString().padStart(2, '0')}
+                        <span className="text-[10px] opacity-40">.{Math.floor((timeLeft % 1) * 10)}</span>
+                      </span>
                     )}
-                    
-                    {/* The Visual Arrow */}
-                    {arrow.type !== 'locked' && (
-                       <View style={tw`items-center`}>
-                          <View style={[tw`bg-white h-2 rounded-full`, { width: cellSize * 0.1, marginBottom: -2 }]} />
-                          <ArrowRight 
-                            size={cellSize * 0.5} 
-                            color={arrow.type === 'key' ? '#fbbf24' : arrow.type === 'shifter' ? '#e879f9' : '#22d3ee'} 
-                            style={{ transform: [{ rotate: '-90deg' }] }} // Adjusted for ArrowRight to point UP baseline
-                          />
-                       </View>
-                    )}
-                 </View>
-               </TouchableOpacity>
-             );
-           })}
-        </View>
-
-        {/* Toolbox */}
-        <View style={tw`flex-row gap-5 mt-10`}>
-           <TouchableOpacity 
-             onPress={() => setActiveTool(activeTool === 'rotate' ? null : 'rotate')}
-             disabled={toolbox.rotations <= 0}
-             style={tw`flex-row items-center bg-white/5 p-4 rounded-3xl border-2 ${activeTool === 'rotate' ? 'border-accent-purple bg-accent-purple/20' : 'border-white/10'} ${toolbox.rotations <= 0 ? 'opacity-20' : 'opacity-100'}`}
-           >
-              <RotateCw size={22} color="#818cf8" />
-              <View style={tw`ml-3`}>
-                <Text style={tw`text-white font-black text-lg`}>{toolbox.rotations}</Text>
-                <Text style={tw`text-text-dim text-[8px] font-bold uppercase`}>Rotations</Text>
-              </View>
-           </TouchableOpacity>
-
-           <TouchableOpacity 
-             onPress={undo}
-             disabled={history.length === 0}
-             style={tw`flex-row items-center bg-white/5 p-4 rounded-3xl border-2 border-white/10 ${history.length === 0 ? 'opacity-20' : 'opacity-100'}`}
-           >
-              <History size={22} color="#22d3ee" />
-              <View style={tw`ml-3`}>
-                <Text style={tw`text-white font-black text-xs uppercase tracking-tighter`}>Recall</Text>
-                <Text style={tw`text-text-dim text-[8px] font-bold uppercase`}>Undo Move</Text>
-              </View>
-           </TouchableOpacity>
-        </View>
-      </ScrollView>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold px-1">
+                  <span>Clearing Progress</span>
+                  <span className="text-white font-black">{Math.round((removedIds.size / (arrows.length || 1)) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(removedIds.size / (arrows.length || 1)) * 100}%` }}
+                    className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
 
       {/* Level Selector Modal */}
-      <Modal visible={showLevelSelector} animationType="slide" transparent={true}>
-         <View style={tw`flex-1 bg-bg-main/95 p-6`}>
-            <View style={tw`flex-row justify-between items-center mb-10`}>
-               <View>
-                 <Text style={tw`text-white text-3xl font-black italic uppercase tracking-tighter`}>Level Archive</Text>
-                 <Text style={tw`text-text-dim text-sm font-medium`}>Total Challenges: {LEVELS.length}</Text>
-               </View>
-               <TouchableOpacity onPress={() => setShowLevelSelector(false)} style={tw`p-3 bg-white/5 rounded-full`}>
-                 <X size={24} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
+      <AnimatePresence>
+        {showLevelSelector && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0f172a]/95 backdrop-blur-xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="glass-panel w-full max-w-4xl max-h-[80vh] rounded-[32px] overflow-hidden flex flex-col p-8"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter">Level Archive</h2>
+                  <p className="text-[#94a3b8] text-sm font-medium">Select your challenge</p>
+                </div>
+                <button 
+                  onClick={() => setShowLevelSelector(false)}
+                  className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-all text-[#94a3b8] hover:text-white"
+                >
+                  <X size={24} />
+                </button>
+              </div>
 
-            <ScrollView contentContainerStyle={tw`flex-row flex-wrap gap-3 pb-10`}>
-               {LEVELS.map((level, idx) => (
-                 <TouchableOpacity
-                   key={idx}
-                   onPress={() => { setCurrentLevelIdx(idx); setShowLevelSelector(false); }}
-                   style={[
-                     tw`w-16 h-16 rounded-2xl items-center justify-center border`,
-                     currentLevelIdx === idx ? tw`bg-accent-cyan border-accent-cyan` : idx < maxReachedLevel ? tw`bg-indigo-500/10 border-indigo-500/30` : tw`bg-slate-800/50 border-white/5`
-                   ]}
-                 >
-                   <Text style={[tw`text-lg font-black`, currentLevelIdx === idx ? tw`text-bg-main` : tw`text-white`]}>{idx + 1}</Text>
-                   {idx < maxReachedLevel && <CheckCircle2 size={10} color="#818cf8" style={tw`absolute top-1 right-1`} />}
-                 </TouchableOpacity>
-               ))}
-            </ScrollView>
-         </View>
-      </Modal>
+                <div className="flex-1 overflow-y-auto px-2 scrollbar-hide grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 pb-8">
+                  {LEVELS.map((level, idx) => (
+                    <button
+                      key={idx}
+                      ref={currentLevelIdx === idx ? activeLevelRef : null}
+                      onClick={() => selectLevel(idx)}
+                      className={`
+                        aspect-square rounded-2xl flex flex-col items-center justify-center relative transition-all group
+                        ${currentLevelIdx === idx 
+                          ? 'bg-gradient-to-br from-[#22d3ee] to-[#818cf8] text-[#0f172a] scale-110 shadow-xl shadow-cyan-900/40' 
+                          : idx < maxReachedLevel
+                            ? 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20'
+                            : 'bg-slate-800/50 border border-white/5 hover:border-[#22d3ee]/50'}
+                      `}
+                    >
+                      <span className="text-lg font-black">{idx + 1}</span>
+                      <span className="text-[8px] uppercase tracking-tighter opacity-70 group-hover:opacity-100">{level.gridSize}x{level.gridSize}</span>
+                      {idx > maxReachedLevel + 5 && (
+                        <div className="absolute top-1 right-1 opacity-40">
+                          <Lock size={8} />
+                        </div>
+                      )}
+                      {idx < maxReachedLevel && (
+                        <div className="absolute top-1 right-1 text-indigo-400/60">
+                          <CheckCircle2 size={10} />
+                        </div>
+                      )}
+                    </button>
+                ))}
+              </div>
+              
+              <div className="mt-8 pt-6 border-t border-white/5 flex gap-4 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-cyan-500" />
+                  <span className="text-slate-400">Current</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-indigo-500/20 border border-indigo-500/30" />
+                  <span className="text-slate-400">Cleared</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded bg-slate-800" />
+                  <span className="text-slate-400">Available</span>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Victory Modal */}
-      <Modal visible={showVictory} transparent={true} animationType="fade">
-         <View style={tw`flex-1 bg-black/80 items-center justify-center p-8`}>
-            <View style={tw`bg-[#1e293b] w-full p-8 rounded-3xl border-2 border-accent-cyan items-center`}>
-               <CheckCircle2 size={64} color="#22d3ee" style={tw`mb-4`} />
-               <Text style={tw`text-white text-3xl font-black italic uppercase text-center mb-2`}>Sector Cleared</Text>
-               <Text style={tw`text-text-dim text-center mb-8`}>Extraction successful. Moving to next target.</Text>
-               
-               <TouchableOpacity 
-                 onPress={() => setCurrentLevelIdx(prev => Math.min(LEVELS.length - 1, prev + 1))}
-                 style={tw`bg-accent-cyan w-full py-4 rounded-xl items-center`}
-               >
-                 <Text style={tw`text-bg-main font-black uppercase`}>Next Mission</Text>
-               </TouchableOpacity>
-            </View>
-         </View>
-      </Modal>
+      <footer className="p-6 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
+        Arrow Escape Puzzle &bull; Strategy & Logic
+      </footer>
+    </div>
+  );
+}
 
-      {/* Game Over Modal */}
-      <Modal visible={showGameOver} transparent={true} animationType="fade">
-         <View style={tw`flex-1 bg-black/80 items-center justify-center p-8`}>
-            <View style={tw`bg-[#1e293b] w-full p-8 rounded-3xl border-2 border-red-500 items-center`}>
-               <X size={64} color="#ef4444" style={tw`mb-4`} />
-               <Text style={tw`text-white text-3xl font-black italic uppercase text-center mb-2`}>Mission Failed</Text>
-               <Text style={tw`text-text-dim text-center mb-8`}>
-                 {gameOverReason === 'time' ? 'Chronometer expired.' : 'Resources depleted.'}
-               </Text>
-               
-               <TouchableOpacity 
-                 onPress={() => initLevel(currentLevelIdx)}
-                 style={tw`bg-red-500 w-full py-4 rounded-xl items-center`}
-               >
-                 <Text style={tw`text-white font-black uppercase`}>Re-Engage</Text>
-               </TouchableOpacity>
-            </View>
-         </View>
-      </Modal>
+function StatItem({ label, value }: { label: string, value: string | number }) {
+  return (
+    <div className="text-center min-w-[60px]">
+      <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-0.5">{label}</div>
+      <div className="text-base lg:text-lg font-bold tabular-nums text-white">{value}</div>
+    </div>
+  );
+}
 
-    </SafeAreaView>
+function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, label: string, onClick: () => void, disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full py-3 bg-white/5 border border-white/10 text-[#f8fafc] font-semibold rounded-xl flex items-center gap-3 px-5 transition-all hover:bg-white/10 hover:border-[#22d3ee]/30 active:scale-95 disabled:opacity-20 disabled:pointer-events-none"
+    >
+      <span className="opacity-70">{icon}</span>
+      <span className="text-sm">{label}</span>
+    </button>
+  );
+}
+
+function ArrowIcon({ arrow }: { arrow: ArrowData }) {
+  const rotation = { up: 0, right: 90, down: 180, left: 270 }[arrow.dir];
+  // Arrow colors from design
+  const colorClass = {
+    up: 'text-[#f43f5e]',    // Rose
+    right: 'text-[#10b981]',  // Emerald
+    down: 'text-[#f59e0b]',   // Amber
+    left: 'text-[#3b82f6]'    // Blue
+  }[arrow.dir];
+
+  // Using a custom triangle-like icon matching the design's CSS ::after
+  return (
+    <div 
+      className={`relative w-full h-full flex items-center justify-center transition-transform ${colorClass}`}
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
+      <svg width="70%" height="70%" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-[0_0_8px_rgba(0,0,0,0.5)]">
+        <path d="M12 4L4 18H20L12 4Z" />
+      </svg>
+      {arrow.type === 'rotator' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <RotateCcw size={10} className="text-white/30" />
+        </div>
+      )}
+      {arrow.type === 'shifter' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Move size={10} className="text-white/30" />
+        </div>
+      )}
+      {arrow.type === 'switch' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-1.5 h-1.5 bg-pink-400 rounded-sm rotate-45" />
+        </div>
+      )}
+    </div>
   );
 }
