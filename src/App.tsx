@@ -25,7 +25,9 @@ import {
   VolumeX,
   Clock,
   AlertTriangle,
-  RotateCcw as RefreshCw
+  RotateCcw as RefreshCw,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Direction, ArrowData, Level, TileData, ToolboxConfig } from './types';
 import { getLevel, LEVEL_METADATA } from './levels';
@@ -66,12 +68,20 @@ export default function App() {
     const saved = localStorage.getItem('arrow-escape-muted');
     return saved === 'true';
   });
+  const [gameMode, setGameMode] = useState<'standard' | 'hidden'>(() => {
+    const saved = localStorage.getItem('arrow-escape-mode');
+    return (saved as 'standard' | 'hidden') || 'standard';
+  });
   
   const currentLevel = useMemo(() => getLevel(currentLevelIdx), [currentLevelIdx]);
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
   }, [isMuted]);
+
+  useEffect(() => {
+    localStorage.setItem('arrow-escape-mode', gameMode);
+  }, [gameMode]);
 
   useEffect(() => {
     if (currentLevelIdx > maxReachedLevel) {
@@ -393,6 +403,14 @@ export default function App() {
         </div>
         <div className="flex gap-4 lg:gap-8 items-center">
           <button 
+            onClick={() => setGameMode(prev => prev === 'standard' ? 'hidden' : 'standard')}
+            className={`p-2 transition-all flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${gameMode === 'hidden' ? 'bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'bg-white/5 text-[#94a3b8] border border-transparent hover:bg-white/10'}`}
+            title={gameMode === 'hidden' ? "Switch to Standard" : "Switch to Hidden"}
+          >
+            {gameMode === 'hidden' ? <EyeOff size={16} /> : <Eye size={16} />}
+            <span className="hidden sm:inline">{gameMode === 'hidden' ? 'Hidden Mode' : 'Standard'}</span>
+          </button>
+          <button 
             onClick={() => setIsMuted(prev => !prev)}
             className="p-2 text-[#94a3b8] hover:text-[#22d3ee] transition-colors"
             title={isMuted ? "Unmute" : "Mute"}
@@ -511,6 +529,7 @@ export default function App() {
           showGameOver={showGameOver}
           gameOverReason={gameOverReason}
           currentLevelIdx={currentLevelIdx}
+          gameMode={gameMode}
           handleArrowClick={handleArrowClick}
           setHoveredArrowId={setHoveredArrowId}
           nextLevel={nextLevel}
@@ -705,6 +724,15 @@ export default function App() {
 
       {/* Mobile Float Controls */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-[#0f172a]/90 backdrop-blur-xl border border-white/10 rounded-2xl lg:hidden z-30 shadow-2xl">
+        {/* Sound Toggle */}
+        <button 
+          onClick={() => setGameMode(prev => prev === 'standard' ? 'hidden' : 'standard')}
+          className="w-12 h-12 flex flex-col items-center justify-center bg-white/5 rounded-xl transition-all"
+        >
+          {gameMode === 'hidden' ? <EyeOff size={16} /> : <Eye size={16} />}
+          <span className="text-[7px] uppercase font-bold mt-1">{gameMode === 'hidden' ? 'Hidden' : 'Std'}</span>
+        </button>
+
         <button onClick={handleUndo} disabled={history.length === 0} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl disabled:opacity-20"><Undo2 size={18} /></button>
         <button onClick={handleReset} className="px-6 h-12 flex items-center gap-2 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl active:scale-95 transition-transform"><RotateCcw size={18} /> Restart</button>
         <button onClick={handleHint} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl"><Lightbulb size={18} /></button>
@@ -796,15 +824,38 @@ const GameBoard = React.memo(({
   showGameOver, 
   gameOverReason, 
   currentLevelIdx, 
+  gameMode,
   handleArrowClick, 
   setHoveredArrowId,
   nextLevel,
   handleReset
 }: any) => {
+  const [pointerPos, setPointerPos] = useState({ x: -1000, y: -1000 });
+  const boardRef = useRef<HTMLDivElement>(null);
+
+  const handlePointer = (e: React.PointerEvent) => {
+    if (gameMode !== 'hidden' || !boardRef.current) return;
+    const rect = boardRef.current.getBoundingClientRect();
+    setPointerPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+  };
+
+  const handlePointerLeave = () => {
+    if (gameMode === 'hidden') {
+      setPointerPos({ x: -1000, y: -1000 });
+    }
+  };
+
   return (
     <section className="flex flex-col items-center justify-center relative touch-none">
       <div 
-        className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl"
+        ref={boardRef}
+        onPointerMove={handlePointer}
+        onPointerDown={handlePointer}
+        onPointerLeave={handlePointerLeave}
+        className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl overflow-hidden"
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
@@ -814,6 +865,15 @@ const GameBoard = React.memo(({
           height: 'min(90vw, 450px)',
         }}
       >
+        {/* Dark Overlay for Hidden Mode */}
+        {gameMode === 'hidden' && (
+          <div 
+            className="absolute inset-0 z-20 pointer-events-none"
+            style={{
+              background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 0.98) 100%)`
+            }}
+          />
+        )}
         {/* Cell Grid Background */}
         {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
           <div key={i} className="bg-slate-800/50 rounded-lg" />
