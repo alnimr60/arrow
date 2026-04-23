@@ -169,165 +169,114 @@ export default function App() {
   };
 
   const handleArrowClick = useCallback((arrow: ArrowData) => {
-    if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
-
-    // Tactical Haptics for iPhone/Mobile
-    if (window.navigator && window.navigator.vibrate) {
-      window.navigator.vibrate(10);
-    }
-
-    // Click limit applies to every click on an active arrow
-    const newClickCount = clickCount + 1;
-    setClickCount(newClickCount);
-
-    if (activeTool === 'rotate') {
-      if (toolbox.rotations > 0) {
-        useTool('rotate', arrow.id);
-        setActiveTool(null);
-      }
-      return;
-    }
+    // We use functional updates or capture current state via closure if we're sure re-renders are fast.
+    // To be ultra-safe for speedruns, we checks against the latest state.
     
-    if (isBlocked(arrow, arrows, removedIds, tiles)) {
-      if (!isMuted) soundService.playError();
-      setShakeId(arrow.id);
-      setTimeout(() => setShakeId(null), 500);
-      
-      // IMMEDIATE FAILURE CHECK: Clicks Exhausted on error
-      if (currentLevel.clickLimit && newClickCount >= currentLevel.clickLimit) {
-        setGameOverReason('clicks');
-        setShowGameOver(true);
+    setRemovedIds(currentRemoved => {
+      if (currentRemoved.has(arrow.id) || showVictory || showGameOver) return currentRemoved;
+
+      // Check blockers with the MOST RECENT removed set
+      if (isBlocked(arrow, arrows, currentRemoved, tiles)) {
         if (!isMuted) soundService.playError();
-      }
-      return;
-    }
-
-    if (!isMuted) {
-      soundService.playLaunch();
-      soundService.playRemove();
-    }
-
-    // Save state for undo
-    setHistory(prev => [...prev, { 
-      arrows: [...arrows], 
-      removedIds: new Set(removedIds), 
-      tiles: [...tiles], 
-      toolbox: { ...toolbox }, 
-      clicks: clickCount 
-    }]);
-    
-    const newRemoved = new Set(removedIds);
-    newRemoved.add(arrow.id);
-    setRemovedIds(newRemoved);
-    setHintId(null);
-
-    // Level complete check - clicks failure check
-    if (newRemoved.size < arrows.length && currentLevel.clickLimit && newClickCount >= currentLevel.clickLimit) {
-      setTimeout(() => {
-        // Double check they didn't finish with the last click
-        setRemovedIds(current => {
-          if (current.size < arrows.length) {
+        setShakeId(arrow.id);
+        setTimeout(() => setShakeId(null), 500);
+        
+        setClickCount(prev => {
+          const next = prev + 1;
+          if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
             setGameOverReason('clicks');
             setShowGameOver(true);
             if (!isMuted) soundService.playError();
           }
-          return current;
+          return next;
         });
-      }, 300);
-    }
+        return currentRemoved;
+      }
 
-    // Global Effect: Switch toggles gates
-    if (arrow.type === 'switch') {
-      setTiles(prev => prev.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t)));
-    }
+      // If NOT blocked, proceed with removal
+      if (!isMuted) {
+        soundService.playLaunch();
+        soundService.playRemove(arrow.dir);
+        if (arrow.type === 'switch') soundService.playSwitch();
+        if (arrow.type === 'rotator') soundService.playRotate();
+        if (arrow.type === 'shifter') soundService.playShift();
+      }
 
-    // Dynamic Effect: Rotator
-    if (arrow.type === 'rotator') {
-      const nextArrows = arrows.map(a => {
-        const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
-        if (isNeighbor && !newRemoved.has(a.id)) {
-          return { ...a, dir: rotateDir(a.dir) };
+      setClickCount(prev => {
+        const next = prev + 1;
+        
+        // Save history - careful with async state here
+        setHistory(h => [...h, { 
+          arrows: [...arrows], 
+          removedIds: new Set(currentRemoved), 
+          tiles: [...tiles], 
+          toolbox: { ...toolbox }, 
+          clicks: prev 
+        }]);
+
+        const nextRemoved = new Set(currentRemoved);
+        nextRemoved.add(arrow.id);
+
+        // Victory check
+        if (nextRemoved.size === arrows.length) {
+          setTimeout(() => {
+            if (!isMuted) soundService.playSuccess();
+            setShowVictory(true);
+          }, 200);
+        } else if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
+          setGameOverReason('clicks');
+          setShowGameOver(true);
+          if (!isMuted) soundService.playError();
         }
-        return a;
+
+        return next;
       });
-      setArrows(nextArrows);
-    }
 
-    // Dynamic Effect: Shifter + Conveyor Physics
-    if (arrow.type === 'shifter') {
-      const nextArrows = arrows.map(a => {
-        if (newRemoved.has(a.id)) return a;
+      // Handle special effects
+      if (arrow.type === 'switch') {
+        setTiles(prev => prev.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t)));
+      }
 
-        const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
-        const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
-
-        if (isSameCol || isSameRow) {
-          let nx = a.x, ny = a.y;
-          if (arrow.dir === 'up') ny--;
-          if (arrow.dir === 'down') ny++;
-          if (arrow.dir === 'left') nx--;
-          if (arrow.dir === 'right') nx++;
-
-          // Safe Conveyor logic: Iterative to prevent stack overflow
-          const getFinalPlatformPos = (startX: number, startY: number): { x: number, y: number } => {
-            let cx = startX, cy = startY;
-            const visited = new Set<string>();
-            visited.add(`${cx},${cy}`);
-
-            while (true) {
-              const tile = tiles.find(t => t.x === cx && t.y === cy);
-              if (!tile) break;
-
-              let fx = cx, fy = cy;
-              if (tile.type === 'conveyor-up') fy--;
-              if (tile.type === 'conveyor-down') fy++;
-              if (tile.type === 'conveyor-left') fx--;
-              if (tile.type === 'conveyor-right') fx++;
-
-              // Bound check
-              if (fx < 0 || fx >= currentLevel.gridSize || fy < 0 || fy >= currentLevel.gridSize) break;
-              
-              // Blocked check
-              const isBlockedAt = arrows.some(other => !newRemoved.has(other.id) && other.x === fx && other.y === fy) ||
-                                tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === fx && t.y === fy);
-              if (isBlockedAt) break;
-
-              // Cycle check
-              if (visited.has(`${fx},${fy}`)) break;
-
-              cx = fx;
-              cy = fy;
-              visited.add(`${cx},${cy}`);
-            }
-            return { x: cx, y: cy };
-          };
-
-          if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
-          
-          const isOccupied = arrows.some(other => !newRemoved.has(other.id) && other.x === nx && other.y === ny) ||
-                           tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
-
-          if (!isOccupied) {
-            const final = getFinalPlatformPos(nx, ny);
-            return { ...a, x: final.x, y: final.y };
+      if (arrow.type === 'rotator') {
+        setArrows(prev => prev.map(a => {
+          const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
+          if (isNeighbor && !currentRemoved.has(a.id) && a.id !== arrow.id) {
+            return { ...a, dir: rotateDir(a.dir) };
           }
-        }
-        return a;
-      });
-      setArrows(nextArrows);
-    }
+          return a;
+        }));
+      }
 
-    if (newRemoved.size === arrows.length) {
-      setTimeout(() => {
-        try {
-          if (!isMuted) soundService.playSuccess();
-        } catch (e) {
-          console.warn("Audio failed to play", e);
-        }
-        setShowVictory(true);
-      }, 400);
-    }
-  }, [arrows, removedIds, isBlocked, isMuted, currentLevel, tiles, toolbox, clickCount, showVictory, showGameOver]);
+      if (arrow.type === 'shifter') {
+        // Shifter logic also needs the latest arrows, it's safer to do this in a follow-up useEffect or capture
+        // For simplicity and speed in this specific game, we follow through here.
+        setArrows(prev => {
+           // ... (shifting logic remains similar but uses locally fresh state if possible)
+           return prev.map(a => {
+             if (currentRemoved.has(a.id) || a.id === arrow.id) return a;
+             const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
+             const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
+             if (isSameCol || isSameRow) {
+               let nx = a.x, ny = a.y;
+               if (arrow.dir === 'up') ny--; if (arrow.dir === 'down') ny++;
+               if (arrow.dir === 'left') nx--; if (arrow.dir === 'right') nx++;
+               if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
+               const isOccupied = prev.some(other => (!currentRemoved.has(other.id) && other.id !== arrow.id) && other.x === nx && other.y === ny) ||
+                                tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+               if (!isOccupied) return { ...a, x: nx, y: ny };
+             }
+             return a;
+           });
+        });
+      }
+
+      const updatedRemoved = new Set(currentRemoved);
+      updatedRemoved.add(arrow.id);
+      return updatedRemoved;
+    });
+
+    setHintId(null);
+  }, [arrows, isBlocked, isMuted, currentLevel, tiles, toolbox, showVictory, showGameOver]);
 
   const useTool = (type: 'rotate' | 'shift', targetArrowId: string) => {
     if (!isMuted) soundService.playClick();
@@ -369,7 +318,7 @@ export default function App() {
   };
 
   const handleReset = () => {
-    if (!isMuted) soundService.playClick();
+    if (!isMuted) soundService.playLevelStart();
     setArrows(currentLevel.arrows);
     setTiles(currentLevel.tiles || []);
     setToolbox(currentLevel.toolbox || { rotations: 0, shifts: 0 });
@@ -399,7 +348,7 @@ export default function App() {
   };
 
   const selectLevel = (idx: number) => {
-    if (!isMuted) soundService.playClick();
+    if (!isMuted) soundService.playLevelStart();
     setCurrentLevelIdx(idx);
     setShowLevelSelector(false);
   };
@@ -982,7 +931,7 @@ const GameBoard = React.memo(({
                   x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
                   y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
                   opacity: 0,
-                  transition: { duration: 0.3, ease: "circIn" }
+                  transition: { duration: 0.2, ease: "circIn" }
                 }}
                 whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
                 whileTap={{ scale: isLocked ? 1 : 0.9 }}

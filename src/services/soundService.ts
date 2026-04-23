@@ -12,7 +12,7 @@ class SoundService {
       if (!this.ctx) {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContextClass) return;
-        this.ctx = new AudioContextClass();
+        this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
         this.masterGain = this.ctx.createGain();
         this.masterGain.connect(this.ctx.destination);
         this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
@@ -63,11 +63,36 @@ class SoundService {
     this.createVoice(800, 'sine', 0.1, 0.1, 2400);
   }
 
-  playRemove() {
+  playRemove(direction: string) {
     const now = this.ctx?.currentTime || 0;
-    // Layered sound for "punch"
-    this.createVoice(400, 'square', 0.15, 0.15, 1200);
-    this.createVoice(80, 'sine', 0.1, 0.25, 40);
+    
+    // Direction-based frequency shifts for "color-specific" feel
+    const baseFreqs: Record<string, number> = {
+      up: 600,    // Higher/Rose
+      down: 300,  // Lower/Amber
+      left: 450,  // Mid/Blue
+      right: 500  // Mid/Emerald
+    };
+    
+    const freq = baseFreqs[direction] || 400;
+    
+    // Layered sound for "punch" - varied by direction
+    this.createVoice(freq, 'square', 0.15, 0.15, freq * 2);
+    this.createVoice(freq / 4, 'sine', 0.1, 0.25, freq / 8);
+  }
+
+  playRotate() {
+    this.createVoice(400, 'sine', 0.2, 0.1, 200);
+    this.createVoice(200, 'sine', 0.1, 0.1, 400);
+  }
+
+  playSwitch() {
+    this.createVoice(700, 'triangle', 0.1, 0.1, 900);
+    this.createVoice(900, 'triangle', 0.1, 0.05, 700);
+  }
+
+  playShift() {
+    this.createVoice(200, 'sawtooth', 0.3, 0.05, 300);
   }
 
   playMove() {
