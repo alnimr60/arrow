@@ -5,16 +5,17 @@
 
 class SoundService {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
 
   private init() {
     try {
       if (!this.ctx) {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) {
-          console.warn("AudioContext not supported in this browser.");
-          return;
-        }
+        if (!AudioContextClass) return;
         this.ctx = new AudioContextClass();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.connect(this.ctx.destination);
+        this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
       }
       if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume();
@@ -24,95 +25,86 @@ class SoundService {
     }
   }
 
-  private createOscillator(freq: number, type: OscillatorType = 'sine', duration: number = 0.1, volume: number = 0.1) {
+  private createVoice(freq: number, type: OscillatorType, duration: number, volume: number, endFreq?: number) {
     this.init();
-    if (!this.ctx) return;
+    if (!this.ctx || !this.masterGain) return;
 
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
 
     osc.type = type;
     osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    if (endFreq) {
+      osc.frequency.exponentialRampToValueAtTime(endFreq, this.ctx.currentTime + duration);
+    }
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(freq * 2, this.ctx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(freq * 0.5, this.ctx.currentTime + duration);
 
     gain.gain.setValueAtTime(volume, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
 
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
 
     osc.start();
     osc.stop(this.ctx.currentTime + duration);
   }
 
   playClick() {
-    this.createOscillator(800, 'sine', 0.05, 0.05);
+    this.createVoice(1200, 'sine', 0.04, 0.15);
+  }
+
+  playLaunch() {
+    // High-pitched "zip" sound
+    this.createVoice(800, 'sine', 0.1, 0.1, 2400);
   }
 
   playRemove() {
-    this.init();
-    if (!this.ctx) return;
+    const now = this.ctx?.currentTime || 0;
+    // Layered sound for "punch"
+    this.createVoice(400, 'square', 0.15, 0.15, 1200);
+    this.createVoice(80, 'sine', 0.1, 0.25, 40);
+  }
 
-    const duration = 0.3;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(400, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + duration);
-
-    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start();
-    osc.stop(this.ctx.currentTime + duration);
+  playMove() {
+    this.createVoice(300, 'sine', 0.1, 0.05, 450);
   }
 
   playError() {
+    this.createVoice(150, 'square', 0.2, 0.1, 80);
+    this.createVoice(145, 'sawtooth', 0.2, 0.05, 75);
+  }
+
+  playLevelStart() {
     this.init();
-    if (!this.ctx) return;
-
-    const duration = 0.2;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(150, this.ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + duration);
-
-    gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start();
-    osc.stop(this.ctx.currentTime + duration);
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    // Rising chromatic scale
+    [440, 554.37, 659.25].forEach((f, i) => {
+      this.createVoice(f, 'sine', 0.15, 0.05);
+    });
   }
 
   playSuccess() {
     this.init();
-    if (!this.ctx) return;
-
+    if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
-    const playNote = (freq: number, start: number, dur: number) => {
-      const osc = this.ctx!.createOscillator();
-      const gain = this.ctx!.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, start);
-      gain.gain.setValueAtTime(0.1, start);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-      osc.connect(gain);
-      gain.connect(this.ctx!.destination);
-      osc.start(start);
-      osc.stop(start + dur);
-    };
+    
+    // Major 7th chord sweep
+    const notes = [523.25, 659.25, 783.99, 987.77, 1046.50]; 
+    notes.forEach((freq, i) => {
+      setTimeout(() => {
+        this.createVoice(freq, 'sine', 0.6, 0.12, freq * 1.02);
+      }, i * 80);
+    });
+  }
 
-    playNote(523.25, now, 0.2); // C5
-    playNote(659.25, now + 0.1, 0.2); // E5
-    playNote(783.99, now + 0.2, 0.4); // G5
+  playHint() {
+    this.createVoice(880, 'sine', 0.1, 0.1, 1100);
   }
 }
 

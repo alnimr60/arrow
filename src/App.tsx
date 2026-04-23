@@ -116,6 +116,7 @@ export default function App() {
     setGameOverReason(null);
     setClickCount(0);
     setTimeLeft(currentLevel.timeLimit || null);
+    if (!isMuted) soundService.playLevelStart();
     localStorage.setItem('arrow-escape-level', currentLevelIdx.toString());
   }, [currentLevelIdx, currentLevel]);
 
@@ -130,15 +131,14 @@ export default function App() {
     }
 
     const { x, y, dir } = arrow;
-    const remaining = allArrows.filter(a => !removed.has(a.id));
     
-    // Check arrows
+    // Check arrows without filter for speed
     const isArrowBlocked = (() => {
       switch (dir) {
-        case 'up': return remaining.some(a => a.x === x && a.y < y);
-        case 'down': return remaining.some(a => a.x === x && a.y > y);
-        case 'left': return remaining.some(a => a.y === y && a.x < x);
-        case 'right': return remaining.some(a => a.y === y && a.x > x);
+        case 'up': return allArrows.some(a => !removed.has(a.id) && a.x === x && a.y < y);
+        case 'down': return allArrows.some(a => !removed.has(a.id) && a.x === x && a.y > y);
+        case 'left': return allArrows.some(a => !removed.has(a.id) && a.y === y && a.x < x);
+        case 'right': return allArrows.some(a => !removed.has(a.id) && a.y === y && a.x > x);
       }
     })();
     if (isArrowBlocked) return true;
@@ -202,7 +202,10 @@ export default function App() {
       return;
     }
 
-    if (!isMuted) soundService.playRemove();
+    if (!isMuted) {
+      soundService.playLaunch();
+      soundService.playRemove();
+    }
 
     // Save state for undo
     setHistory(prev => [...prev, { 
@@ -230,7 +233,7 @@ export default function App() {
           }
           return current;
         });
-      }, 600);
+      }, 300);
     }
 
     // Global Effect: Switch toggles gates
@@ -322,7 +325,7 @@ export default function App() {
           console.warn("Audio failed to play", e);
         }
         setShowVictory(true);
-      }, 800);
+      }, 400);
     }
   }, [arrows, removedIds, isBlocked, isMuted, currentLevel, tiles, toolbox, clickCount, showVictory, showGameOver]);
 
@@ -454,7 +457,7 @@ export default function App() {
       </nav>
 
       {/* Main Container */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full" style={{ paddingBottom: 'calc(2.5rem + var(--safe-bottom))' }}>
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full">
         {/* Left Sidebar */}
         <aside className="hidden lg:flex flex-col gap-5">
           <div className="glass-panel rounded-[20px] p-6">
@@ -751,7 +754,14 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <footer className="p-6 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
+      {/* Mobile Float Controls */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-[#0f172a]/90 backdrop-blur-xl border border-white/10 rounded-2xl lg:hidden z-30 shadow-2xl">
+        <button onClick={handleUndo} disabled={history.length === 0} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl disabled:opacity-20"><Undo2 size={18} /></button>
+        <button onClick={handleReset} className="px-6 h-12 flex items-center gap-2 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl active:scale-95 transition-transform"><RotateCcw size={18} /> Restart</button>
+        <button onClick={handleHint} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl"><Lightbulb size={18} /></button>
+      </div>
+
+      <footer className="p-6 pb-24 lg:pb-6 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
         Arrow Escape Puzzle &bull; Strategy & Logic
       </footer>
     </div>
@@ -972,16 +982,22 @@ const GameBoard = React.memo(({
                   x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
                   y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
                   opacity: 0,
-                  scale: 0.9,
-                  transition: { duration: 0.5, ease: "anticipate" }
+                  transition: { duration: 0.3, ease: "circIn" }
                 }}
                 whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
                 whileTap={{ scale: isLocked ? 1 : 0.9 }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
-                onTouchStart={() => setHoveredArrowId(arrow.id)}
-                onTouchEnd={() => setHoveredArrowId(null)}
-                onClick={() => handleArrowClick(arrow)}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  setHoveredArrowId(arrow.id);
+                  handleArrowClick(arrow);
+                }}
+                onPointerDown={(e) => {
+                  if (e.pointerType === 'mouse') {
+                    handleArrowClick(arrow);
+                  }
+                }}
                 className={`
                   absolute flex items-center justify-center rounded-lg transition-all duration-300
                   ${isHinted ? 'shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
