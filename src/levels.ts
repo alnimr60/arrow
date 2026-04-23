@@ -443,35 +443,56 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
   },
 ];
 
-const TOTAL_LEVELS_COUNT = 600;
-const generatedLevels: (Level | null)[] = new Array(TOTAL_LEVELS_COUNT).fill(null);
+const TOTAL_STANDARD_LEVELS = 600;
+const TOTAL_INVISIBLE_LEVELS = 100;
+
+const standardLevels: (Level | null)[] = new Array(TOTAL_STANDARD_LEVELS).fill(null);
+const invisibleLevels: (Level | null)[] = new Array(TOTAL_INVISIBLE_LEVELS).fill(null);
 
 HAND_CRAFTED_LEVELS.forEach((level, i) => {
-  generatedLevels[i] = level;
+  if (i < TOTAL_STANDARD_LEVELS) standardLevels[i] = level;
 });
 
 /**
- * Get level by index, generating it lazily if not already created.
+ * Get level by index and mode, generating it lazily if not already created.
  */
-export function getLevel(idx: number): Level {
-  if (idx < 0 || idx >= TOTAL_LEVELS_COUNT) return HAND_CRAFTED_LEVELS[0];
-  if (!generatedLevels[idx]) {
-    generatedLevels[idx] = generateProceduralLevel(idx);
+export function getLevel(idx: number, mode: 'standard' | 'invisible' = 'standard'): Level {
+  const isStandard = mode === 'standard';
+  const levels = isStandard ? standardLevels : invisibleLevels;
+  const total = isStandard ? TOTAL_STANDARD_LEVELS : TOTAL_INVISIBLE_LEVELS;
+
+  if (idx < 0 || idx >= total) return HAND_CRAFTED_LEVELS[0];
+  
+  if (!levels[idx]) {
+    // For invisible mode, we can use a different seed offset to ensure levels are not the same as standard
+    const seedOffset = isStandard ? 0 : 7000;
+    levels[idx] = generateProceduralLevel(idx + seedOffset);
   }
-  return generatedLevels[idx]!;
+  return levels[idx]!;
 }
 
 /**
  * Metadata for all levels (e.g. for level selector UI)
  */
-export const LEVEL_METADATA = Array.from({ length: TOTAL_LEVELS_COUNT }).map((_, i) => {
-  // We can pre-calculate or estimate grid size for the menu
-  let gridSize = 4;
-  if (i > 15) gridSize = 5;
-  if (i > 50) gridSize = 6;
-  if (i > 120) gridSize = 7;
-  if (i > 220) gridSize = 8;
-  if (i > 351) gridSize = 9;
-  if (i > 480) gridSize = 10;
-  return { id: i, gridSize };
-});
+export const getLevelMetadata = (mode: 'standard' | 'invisible' = 'standard') => {
+  const total = mode === 'standard' ? TOTAL_STANDARD_LEVELS : TOTAL_INVISIBLE_LEVELS;
+  return Array.from({ length: total }).map((_, i) => {
+    let gridSize = 4;
+    // Standard progression
+    if (mode === 'standard') {
+      if (i > 15) gridSize = 5;
+      if (i > 50) gridSize = 6;
+      if (i > 120) gridSize = 7;
+      if (i > 220) gridSize = 8;
+      if (i > 351) gridSize = 9;
+      if (i > 480) gridSize = 10;
+    } else {
+      // Invisible mode progression (shorter, 100 stages)
+      if (i > 10) gridSize = 5;
+      if (i > 30) gridSize = 6;
+      if (i > 60) gridSize = 7;
+      if (i > 85) gridSize = 8;
+    }
+    return { id: i, gridSize };
+  });
+};

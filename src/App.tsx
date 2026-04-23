@@ -30,7 +30,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { Direction, ArrowData, Level, TileData, ToolboxConfig } from './types';
-import { getLevel, LEVEL_METADATA } from './levels';
+import { getLevel, getLevelMetadata } from './levels';
 import { soundService } from './services/soundService';
 
 /**
@@ -38,15 +38,127 @@ import { soundService } from './services/soundService';
  * A logic game where you untangle arrows by removing them in the correct order.
  */
 
+// Sub-component for realistic menu previews
+const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', levelIdx: number }) => {
+  const level = useMemo(() => getLevel(levelIdx, mode), [levelIdx, mode]);
+  const [pointerPos, setPointerPos] = useState({ x: 150, y: 150 });
+  const boardRef = useRef<HTMLDivElement>(null);
+
+  // Auto-move flashlight for invisible mode preview - smoother path
+  useEffect(() => {
+    if (mode !== 'invisible') return;
+    let frame = 0;
+    const animate = () => {
+      frame += 0.015;
+      // Figure-8 pattern to scan more area
+      const x = 160 + Math.sin(frame) * 90;
+      const y = 160 + Math.sin(frame * 0.5) * 90;
+      setPointerPos({ x, y });
+      requestAnimationFrame(animate);
+    };
+    const id = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(id);
+  }, [mode]);
+
+  return (
+    <div 
+      ref={boardRef}
+      className={`relative bg-[#0f172a] border-4 border-white/10 rounded-2xl p-3 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden pointer-events-none scale-100 md:scale-125 lg:scale-[1.4] transition-all duration-700`}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${level.gridSize}, 1fr)`,
+        gridTemplateRows: `repeat(${level.gridSize}, 1fr)`,
+        gap: '8px',
+        width: '320px',
+        height: '320px',
+      }}
+    >
+      {/* Grid Background Cells - Matches actual game */}
+      {Array.from({ length: level.gridSize * level.gridSize }).map((_, i) => (
+        <div key={i} className="bg-slate-800/50 rounded-lg" />
+      ))}
+
+      {/* Invisible Overlay - Must be ABOVE arrows to hide them, but transparent center lets them through */}
+      {mode === 'invisible' && (
+        <div 
+          className="absolute inset-0 z-30 pointer-events-none"
+          style={{
+            background: `radial-gradient(circle 80px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 1) 100%)`
+          }}
+        />
+      )}
+
+      {/* Arrows - Same visual logic as GameBoard */}
+      {level.arrows.map((arrow: ArrowData) => (
+        <div
+          key={arrow.id}
+          className="absolute flex items-center justify-center rounded-lg z-10"
+          style={{
+            width: `calc((100% - ${(level.gridSize - 1) * 8}px - 24px) / ${level.gridSize})`,
+            height: `calc((100% - ${(level.gridSize - 1) * 8}px - 24px) / ${level.gridSize})`,
+            left: `calc(12px + (100% - 16px) / ${level.gridSize} * ${arrow.x})`,
+            top: `calc(12px + (100% - 16px) / ${level.gridSize} * ${arrow.y})`,
+            backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
+                             arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
+                             arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
+                             arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' : 'transparent'
+          }}
+        >
+          <ArrowIcon arrow={arrow} />
+          {arrow.type === 'locked' && <Lock size={12} className="text-white/40" />}
+          {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export default function App() {
-  const [currentLevelIdx, setCurrentLevelIdx] = useState(() => {
-    const saved = localStorage.getItem('arrow-escape-level');
-    return saved ? Math.min(parseInt(saved), LEVEL_METADATA.length - 1) : 0;
-  });
-  const [maxReachedLevel, setMaxReachedLevel] = useState(() => {
-    const saved = localStorage.getItem('arrow-escape-max-level');
+  const [currentScreen, setCurrentScreen] = useState<'menu' | 'game'>('menu');
+  const [gameMode, setGameMode] = useState<'standard' | 'invisible'>('standard');
+
+  const [standardLevelIdx, setStandardLevelIdx] = useState(() => {
+    const saved = localStorage.getItem('standard-level');
     return saved ? parseInt(saved) : 0;
   });
+  const [invisibleLevelIdx, setInvisibleLevelIdx] = useState(() => {
+    const saved = localStorage.getItem('invisible-level');
+    return saved ? parseInt(saved) : 0;
+  });
+
+  const [standardMaxLevel, setStandardMaxLevel] = useState(() => {
+    const saved = localStorage.getItem('standard-max-level');
+    return saved ? parseInt(saved) : 0;
+  });
+  const [invisibleMaxLevel, setInvisibleMaxLevel] = useState(() => {
+    const saved = localStorage.getItem('invisible-max-level');
+    return saved ? parseInt(saved) : 0;
+  });
+
+  const currentLevelIdx = gameMode === 'standard' ? standardLevelIdx : invisibleLevelIdx;
+  const maxReachedLevel = gameMode === 'standard' ? standardMaxLevel : invisibleMaxLevel;
+  const setCurrentLevelIdx = (valOrFn: number | ((prev: number) => number)) => {
+    if (gameMode === 'standard') {
+      setStandardLevelIdx(valOrFn);
+      const next = typeof valOrFn === 'function' ? valOrFn(standardLevelIdx) : valOrFn;
+      localStorage.setItem('standard-level', next.toString());
+    } else {
+      setInvisibleLevelIdx(valOrFn);
+      const next = typeof valOrFn === 'function' ? valOrFn(invisibleLevelIdx) : valOrFn;
+      localStorage.setItem('invisible-level', next.toString());
+    }
+  };
+  const setMaxReachedLevel = (val: number) => {
+    if (gameMode === 'standard') {
+      setStandardMaxLevel(val);
+      localStorage.setItem('standard-max-level', val.toString());
+    } else {
+      setInvisibleMaxLevel(val);
+      localStorage.setItem('invisible-max-level', val.toString());
+    }
+  };
+
+  const LEVEL_METADATA = useMemo(() => getLevelMetadata(gameMode), [gameMode]);
   
   const [arrows, setArrows] = useState<ArrowData[]>([]);
   const [tiles, setTiles] = useState<TileData[]>([]);
@@ -68,25 +180,16 @@ export default function App() {
     const saved = localStorage.getItem('arrow-escape-muted');
     return saved === 'true';
   });
-  const [gameMode, setGameMode] = useState<'standard' | 'hidden'>(() => {
-    const saved = localStorage.getItem('arrow-escape-mode');
-    return (saved as 'standard' | 'hidden') || 'standard';
-  });
   
-  const currentLevel = useMemo(() => getLevel(currentLevelIdx), [currentLevelIdx]);
+  const currentLevel = useMemo(() => getLevel(currentLevelIdx, gameMode), [currentLevelIdx, gameMode]);
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
   }, [isMuted]);
 
   useEffect(() => {
-    localStorage.setItem('arrow-escape-mode', gameMode);
-  }, [gameMode]);
-
-  useEffect(() => {
     if (currentLevelIdx > maxReachedLevel) {
       setMaxReachedLevel(currentLevelIdx);
-      localStorage.setItem('arrow-escape-max-level', currentLevelIdx.toString());
     }
   }, [currentLevelIdx, maxReachedLevel]);
 
@@ -353,7 +456,7 @@ export default function App() {
   const nextLevel = () => {
     if (!isMuted) soundService.playClick();
     if (currentLevelIdx < LEVEL_METADATA.length - 1) {
-      setCurrentLevelIdx(prev => prev + 1);
+      setCurrentLevelIdx(currentLevelIdx + 1);
     }
   };
 
@@ -382,6 +485,137 @@ export default function App() {
     return arrow;
   }, [hoveredArrowId, arrows, removedIds, tiles, isBlocked, activeTool]);
 
+  if (currentScreen === 'menu') {
+    return (
+      <div className="min-h-screen bg-[#020617] text-white flex flex-col md:flex-row overflow-hidden font-sans selection:bg-cyan-500/30">
+        {/* Left Side: Standard Mode */}
+        <motion.button 
+          initial={{ x: -100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.8, ease: "circOut" }}
+          onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
+          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700"
+        >
+          {/* Background Ambient Glow */}
+          <div className="absolute inset-0 bg-cyan-950/10 group-hover:bg-cyan-900/20 transition-colors duration-700" />
+          
+          {/* Animated Particles/Fog for Quality */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-500 rounded-full blur-[120px] animate-pulse" />
+          </div>
+
+          {/* Content Wrapper */}
+          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-6">
+            <motion.div 
+              initial={{ scale: 0.9 }}
+              whileHover={{ scale: 1.05 }}
+              className="text-cyan-400"
+            >
+              <LayoutGrid size={48} strokeWidth={1.5} />
+            </motion.div>
+            
+            <div className="space-y-2">
+              <h2 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter text-white group-hover:text-cyan-300 transition-colors">Standard</h2>
+              <p className="text-slate-400 text-sm md:text-base font-medium max-w-sm mx-auto leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
+                Master the art of logical sequence. <br className="hidden md:block"/>
+                Solve 600 precision-crafted tactical challenges.
+              </p>
+            </div>
+
+            {/* Realistic Game Preview */}
+            <div className="mt-4 relative group-hover:scale-105 transition-transform duration-700 ease-out pointer-events-none">
+              <MenuPreviewBoard mode="standard" levelIdx={4} />
+            </div>
+
+            <div className="pt-4">
+               <div className="inline-flex items-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all">
+                 <Trophy size={14} />
+                 Stage {standardMaxLevel + 1} Cleared
+               </div>
+            </div>
+          </div>
+
+          {/* Hover Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+        </motion.button>
+
+        {/* Right Side: Invisible Mode */}
+        <motion.button 
+          initial={{ x: 100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.8, ease: "circOut" }}
+          onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
+          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center bg-[#020617] overflow-hidden transition-all duration-700"
+        >
+          {/* Background Ambient Glow */}
+          <div className="absolute inset-0 bg-purple-950/10 group-hover:bg-purple-900/20 transition-colors duration-700" />
+          
+          {/* Animated Particles/Fog for Quality */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+            <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-500 rounded-full blur-[120px] animate-pulse" />
+          </div>
+
+          {/* Content Wrapper */}
+          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-6">
+            <motion.div 
+              initial={{ scale: 0.9 }}
+              whileHover={{ scale: 1.05 }}
+              className="text-purple-400"
+            >
+              <EyeOff size={48} strokeWidth={1.5} />
+            </motion.div>
+            
+            <div className="space-y-2">
+              <h2 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter text-white group-hover:text-purple-300 transition-colors">Invisible</h2>
+              <p className="text-slate-400 text-sm md:text-base font-medium max-w-sm mx-auto leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
+                Trust your instincts and memory. <br className="hidden md:block"/>
+                100 specialized stages hidden in total shadow.
+              </p>
+            </div>
+
+            {/* Realistic Game Preview - Dark Mode with Scan Animation */}
+            <div className="mt-4 relative group-hover:scale-105 transition-transform duration-700 ease-out pointer-events-none">
+              <MenuPreviewBoard mode="invisible" levelIdx={12} />
+            </div>
+
+            <div className="pt-4">
+               <div className="inline-flex items-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all">
+                 <Clock size={14} />
+                 {invisibleMaxLevel + 1} / 100 Challenges
+               </div>
+            </div>
+          </div>
+
+          {/* Hover Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+        </motion.button>
+
+        {/* Global UI Overlays */}
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
+          <motion.div 
+            initial={{ y: -20, opacity: 0 }} 
+            animate={{ y: 0, opacity: 1 }}
+            className="flex items-center gap-4 bg-black/40 backdrop-blur-xl px-6 py-3 rounded-full border border-white/10 shadow-2xl pointer-events-auto"
+          >
+            <h1 className="text-2xl font-black italic uppercase tracking-tight bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Arrow Escape</h1>
+            <div className="w-[1px] h-4 bg-white/10 mx-2" />
+            <button 
+              onClick={() => setIsMuted(!isMuted)}
+              className="text-slate-400 hover:text-white transition-colors p-1"
+            >
+              {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+          </motion.div>
+        </div>
+
+        {/* Footer info for mobile */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 md:hidden opacity-30 text-[10px] font-black uppercase tracking-[0.4em] pointer-events-none">
+          Logic Engine Ver. 3.0
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen text-[#f8fafc] font-sans flex flex-col">
       {/* Header */}
@@ -391,25 +625,25 @@ export default function App() {
       >
         <div className="flex items-center gap-4">
           <button 
+            onClick={() => setCurrentScreen('menu')}
+            className="p-2 text-[#94a3b8] hover:text-white transition-colors"
+            title="Return to Menu"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <button 
             onClick={() => setShowLevelSelector(true)}
             className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[#22d3ee] transition-all border border-white/5 hover:border-[#22d3ee]/30 group"
           >
             <LayoutGrid size={20} className="group-hover:rotate-90 transition-transform duration-300" />
             <span className="text-sm font-bold uppercase tracking-wider hidden md:block">Stages</span>
           </button>
-          <div className="text-xl lg:text-2xl font-extrabold tracking-tighter bg-gradient-to-br from-[#22d3ee] to-[#818cf8] bg-clip-text text-transparent uppercase hidden sm:block">
-            Arrow Escape
-          </div>
         </div>
         <div className="flex gap-4 lg:gap-8 items-center">
-          <button 
-            onClick={() => setGameMode(prev => prev === 'standard' ? 'hidden' : 'standard')}
-            className={`p-2 transition-all flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${gameMode === 'hidden' ? 'bg-[#22d3ee]/20 text-[#22d3ee] border border-[#22d3ee]/30 shadow-[0_0_15px_rgba(34,211,238,0.2)]' : 'bg-white/5 text-[#94a3b8] border border-transparent hover:bg-white/10'}`}
-            title={gameMode === 'hidden' ? "Switch to Standard" : "Switch to Hidden"}
-          >
-            {gameMode === 'hidden' ? <EyeOff size={16} /> : <Eye size={16} />}
-            <span className="hidden sm:inline">{gameMode === 'hidden' ? 'Hidden Mode' : 'Standard'}</span>
-          </button>
+          <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${gameMode === 'invisible' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'}`}>
+            {gameMode === 'invisible' ? <EyeOff size={16} /> : <Eye size={16} />}
+            <span className="hidden sm:inline">{gameMode === 'invisible' ? 'Invisible Mode' : 'Standard Mode'}</span>
+          </div>
           <button 
             onClick={() => setIsMuted(prev => !prev)}
             className="p-2 text-[#94a3b8] hover:text-[#22d3ee] transition-colors"
@@ -418,8 +652,6 @@ export default function App() {
             {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
           </button>
           <StatItem label="Stage" value={currentLevelIdx + 1} />
-          <StatItem label="Clicks" value={clickCount} />
-          <StatItem label="Goal" value={currentLevel.clickLimit || '-'} />
         </div>
       </nav>
 
@@ -530,6 +762,7 @@ export default function App() {
           gameOverReason={gameOverReason}
           currentLevelIdx={currentLevelIdx}
           gameMode={gameMode}
+          LEVEL_METADATA={LEVEL_METADATA}
           handleArrowClick={handleArrowClick}
           setHoveredArrowId={setHoveredArrowId}
           nextLevel={nextLevel}
@@ -724,15 +957,6 @@ export default function App() {
 
       {/* Mobile Float Controls */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-[#0f172a]/90 backdrop-blur-xl border border-white/10 rounded-2xl lg:hidden z-30 shadow-2xl">
-        {/* Sound Toggle */}
-        <button 
-          onClick={() => setGameMode(prev => prev === 'standard' ? 'hidden' : 'standard')}
-          className="w-12 h-12 flex flex-col items-center justify-center bg-white/5 rounded-xl transition-all"
-        >
-          {gameMode === 'hidden' ? <EyeOff size={16} /> : <Eye size={16} />}
-          <span className="text-[7px] uppercase font-bold mt-1">{gameMode === 'hidden' ? 'Hidden' : 'Std'}</span>
-        </button>
-
         <button onClick={handleUndo} disabled={history.length === 0} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl disabled:opacity-20"><Undo2 size={18} /></button>
         <button onClick={handleReset} className="px-6 h-12 flex items-center gap-2 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl active:scale-95 transition-transform"><RotateCcw size={18} /> Restart</button>
         <button onClick={handleHint} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl"><Lightbulb size={18} /></button>
@@ -825,6 +1049,7 @@ const GameBoard = React.memo(({
   gameOverReason, 
   currentLevelIdx, 
   gameMode,
+  LEVEL_METADATA,
   handleArrowClick, 
   setHoveredArrowId,
   nextLevel,
@@ -834,7 +1059,7 @@ const GameBoard = React.memo(({
   const boardRef = useRef<HTMLDivElement>(null);
 
   const handlePointer = (e: React.PointerEvent) => {
-    if (gameMode !== 'hidden' || !boardRef.current) return;
+    if (gameMode !== 'invisible' || !boardRef.current) return;
     const rect = boardRef.current.getBoundingClientRect();
     setPointerPos({
       x: e.clientX - rect.left,
@@ -863,14 +1088,15 @@ const GameBoard = React.memo(({
           gap: '8px',
           width: 'min(90vw, 450px)',
           height: 'min(90vw, 450px)',
+          cursor: gameMode === 'invisible' ? 'none' : 'default'
         }}
       >
-        {/* Dark Overlay for Hidden Mode */}
-        {gameMode === 'hidden' && (
+        {/* Dark Overlay for Invisible Mode */}
+        {gameMode === 'invisible' && (
           <div 
             className="absolute inset-0 z-20 pointer-events-none"
             style={{
-              background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 0.98) 100%)`
+              background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 1) 90%)`
             }}
           />
         )}
