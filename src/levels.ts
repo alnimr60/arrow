@@ -175,13 +175,15 @@ class SeededRandom {
   }
 }
 
+type GenerationStrategy = 'Critical Chain' | 'Dependency Web' | 'Sparse but Critical' | 'Clustered Challenge';
+
 /**
- * Procedural Level Generator with Logical Depth Emphasis
+ * Procedural Level Generator with Strategic Architectures
  */
 export function generateProceduralLevel(levelIdx: number): Level {
   const rng = new SeededRandom(levelIdx + 7777);
 
-  // Faster grid expansion for more logical space
+  // Grid scaling
   let gridSize = 4;
   if (levelIdx > 15) gridSize = 5;
   if (levelIdx > 50) gridSize = 6;
@@ -190,25 +192,30 @@ export function generateProceduralLevel(levelIdx: number): Level {
   if (levelIdx > 351) gridSize = 9;
   if (levelIdx > 480) gridSize = 10;
 
+  // Strategy Selection
+  const strategies: GenerationStrategy[] = ['Critical Chain', 'Dependency Web', 'Sparse but Critical', 'Clustered Challenge'];
+  const strategy = strategies[levelIdx % strategies.length];
+
   const isElite = (levelIdx + 1) % 5 === 0;
   const isBlitz = (levelIdx + 1) % 7 === 0;
 
-  // Higher density for more "overlap" and blocking chains
-  const baseDensity = 0.35;
-  const densityGrowth = Math.min(0.25, levelIdx * 0.001);
-  const densityMultiplier = baseDensity + densityGrowth + (isElite ? 0.12 : 0);
-  const targetCount = Math.floor(gridSize * gridSize * Math.min(0.7, densityMultiplier));
+  // Density and target count
+  const baseDensity = strategy === 'Sparse but Critical' ? 0.2 : 0.35;
+  const densityGrowth = Math.min(0.3, levelIdx * 0.002);
+  const densityMultiplier = baseDensity + densityGrowth + (isElite ? 0.15 : 0);
+  const targetCount = Math.floor(gridSize * gridSize * Math.min(0.8, densityMultiplier));
 
   let attempts = 0;
-  while (attempts < 40) {
+  while (attempts < 60) {
     attempts++;
     let arrows: ArrowData[] = [];
     let tiles: TileData[] = [];
     const occupied = new Set<string>();
 
-    // Tiles (Gates: Strategic obstacles)
-    if (levelIdx > 12 && rng.next() < (isElite ? 0.8 : 0.4)) {
-      const tileCount = Math.min(4, Math.floor(levelIdx / 30) + 1);
+    // Tiles (Gates)
+    const gateChance = strategy === 'Sparse but Critical' ? 0.7 : (isElite ? 0.8 : 0.4);
+    if (levelIdx > 12 && rng.next() < gateChance) {
+      const tileCount = Math.min(6, Math.floor(levelIdx / 25) + 1);
       for (let j = 0; j < tileCount; j++) {
         const tx = Math.floor(rng.next() * gridSize);
         const ty = Math.floor(rng.next() * gridSize);
@@ -221,59 +228,93 @@ export function generateProceduralLevel(levelIdx: number): Level {
     }
 
     /**
-     * INVERSE GENERATION LOGIC:
-     * We build the level by picking a location and "backing" an arrow into it.
-     * We prioritize placements that block other arrows.
+     * INVERSE GENERATION WITH STRATEGIES
      */
-    for (let i = 0; i < targetCount; i++) {
+    const currentTargetCount = attempts > 50 ? Math.floor(targetCount * 0.7) : targetCount;
+    
+    for (let i = 0; i < currentTargetCount; i++) {
         const candidates: { x: number, y: number, dir: Direction, type: ArrowType, score: number }[] = [];
         
         for (let x = 0; x < gridSize; x++) {
             for (let y = 0; y < gridSize; y++) {
                 if (occupied.has(`${x},${y}`)) continue;
                 
+                // Strategy-specific spatial constraints
+                if (strategy === 'Clustered Challenge') {
+                  // Bias towards clusters (simple quadrant logic)
+                  const quadIdx = Math.floor(i / (currentTargetCount / 3));
+                  const isRight = quadIdx === 1 || quadIdx === 2;
+                  const isBottom = quadIdx >= 2;
+                  if (isRight && x < gridSize / 2) continue;
+                  if (!isRight && x >= gridSize / 2) continue;
+                  if (isBottom && y < gridSize / 2) continue;
+                  if (!isBottom && y >= gridSize / 2) continue;
+                }
+
                 for (const dir of ['up', 'down', 'left', 'right'] as Direction[]) {
-                    // Simulation check: Can this arrow EXIT if it were the only one?
-                    // (Inverse: Can it enter from the edge without hitting a tile?)
                     if (!isPathBlocked({ x, y, dir }, [], tiles)) {
                         let score = 10;
                         
-                        // LOGICAL DEPTH HEURISTICS:
-                        // 1. Prefer picking a spot that BLOCKS an existing arrow
-                        const blockersCount = arrows.filter(a => {
+                        const blocksList = arrows.filter(a => {
                             switch (a.dir) {
                                 case 'up': return a.x === x && a.y > y;
                                 case 'down': return a.x === x && a.y < y;
                                 case 'left': return a.y === y && a.x > x;
                                 case 'right': return a.y === y && a.x < x;
                             }
-                        }).length;
-                        score += blockersCount * 40;
+                        });
 
-                        // 2. Prefer spots that are themselves blocked by tiles (forcing gate interaction)
-                        const tileBlocked = tiles.some(t => {
+                        const blockedByOthers = arrows.some(a => {
                             switch (dir) {
-                                case 'up': return t.x === x && t.y < y;
-                                case 'down': return t.x === x && t.y > y;
-                                case 'left': return t.y === y && t.x < x;
-                                case 'right': return t.y === y && t.x > x;
+                                case 'up': return a.x === x && a.y < y;
+                                case 'down': return a.x === x && a.y > y;
+                                case 'left': return a.y === y && a.x < x;
+                                case 'right': return a.y === y && a.x > x;
                             }
                         });
-                        if (tileBlocked) score += 30;
 
-                        // 3. Central bias for denser chains
-                        const distFromCenter = Math.abs(x - (gridSize/2)) + Math.abs(y - (gridSize/2));
-                        score += (gridSize - distFromCenter) * 5;
+                        if (!blockedByOthers) {
+                          // APPLY STRATEGY LOGIC TO SCORING
+                          if (strategy === 'Critical Chain') {
+                            // Favor blocking the EXACT last arrow placed to build a linear chain
+                            const lastArrow = arrows[arrows.length - 1];
+                            if (lastArrow && blocksList.some(a => a.id === lastArrow.id)) {
+                              score += 100;
+                            } else if (arrows.length > 0) {
+                              score -= 30; // Penalize non-chain extensions
+                            }
+                          } else if (strategy === 'Dependency Web') {
+                            // Favor blocking arrows that are ALREADY blocking others (deep tree)
+                            const deepBlocks = blocksList.filter(target => 
+                              arrows.some(other => {
+                                switch(target.dir) {
+                                  case 'up': return other.x === target.x && other.y > target.y;
+                                  case 'down': return other.x === target.x && other.y < target.y;
+                                  case 'left': return other.y === target.y && other.x > target.x;
+                                  case 'right': return other.y === target.y && other.x < target.x;
+                                }
+                              })
+                            ).length;
+                            score += deepBlocks * 50;
+                            // Also favor blocking MULTIPLE arrows at once
+                            score += blocksList.length * 20;
+                          } else if (strategy === 'Sparse but Critical') {
+                            // Favor placements that overlap multiple paths
+                            score += blocksList.length * 60;
+                          } else {
+                            // Default / Clustered
+                            score += blocksList.length * 40;
+                          }
+                        } else {
+                          score -= 50; 
+                        }
 
-                        // Types
-                        let type: ArrowType = 'normal';
-                        if (levelIdx > 8 && rng.next() < 0.2) type = 'rotator';
-                        else if (levelIdx > 18 && rng.next() < 0.15) type = 'shifter';
-                        else if (levelIdx > 35 && rng.next() < 0.1) type = 'locked';
-                        else if (levelIdx > 50 && rng.next() < 0.05) type = 'switch';
+                        // Boundary check: Prefer inner placements for complex puzzles
+                        const distFromEdge = Math.min(x, gridSize - 1 - x, y, gridSize - 1 - y);
+                        score += distFromEdge * 15;
 
                         score += rng.next() * 10;
-                        candidates.push({ x, y, dir, type, score });
+                        candidates.push({ x, y, dir, type: 'normal', score });
                     }
                 }
             }
@@ -282,16 +323,28 @@ export function generateProceduralLevel(levelIdx: number): Level {
         if (candidates.length === 0) break;
         candidates.sort((a,b) => b.score - a.score);
         
-        // Pick from top candidates (higher difficulty = pick top scores)
-        const variance = isElite ? 2 : 4;
-        const best = candidates[Math.floor(rng.next() * Math.min(candidates.length, variance))];
+        // Elite levels pick more strictly from the best candidates
+        const variance = isElite ? 1 : Math.max(1, Math.floor(candidates.length / 4));
+        const best = candidates[Math.floor(rng.next() * variance)];
         
+        let type: ArrowType = best.type;
+        // Adjust type probabilities by strategy
+        const typeRoll = rng.next();
+        if (strategy === 'Sparse but Critical') {
+          if (levelIdx > 20 && typeRoll < 0.25) type = 'rotator';
+          else if (levelIdx > 30 && typeRoll < 0.4) type = 'shifter';
+        } else {
+          if (levelIdx > 8 && typeRoll < 0.15) type = 'rotator';
+          else if (levelIdx > 18 && typeRoll < 0.25) type = 'shifter';
+          else if (levelIdx > 35 && typeRoll < 0.3) type = 'locked';
+          else if (levelIdx > 50 && typeRoll < 0.35) type = 'switch';
+        }
+
         const newArrow: ArrowData = {
           id: `l${levelIdx}-${i}-${rng.next().toString(36).substr(2, 4)}`,
-          x: best.x, y: best.y, dir: best.dir, type: best.type
+          x: best.x, y: best.y, dir: best.dir, type
         };
 
-        // Effects of "placing" (Inverse operation)
         if (newArrow.type === 'rotator') {
             const rotateCCW = (d: Direction): Direction => ({ up: 'left', left: 'down', down: 'right', right: 'up' } as Record<Direction, Direction>)[d];
             arrows = arrows.map(a => (Math.abs(a.x - newArrow.x) + Math.abs(a.y - newArrow.y) === 1) ? { ...a, dir: rotateCCW(a.dir) } : a);
@@ -320,15 +373,42 @@ export function generateProceduralLevel(levelIdx: number): Level {
       arrows: rng.shuffle(arrows),
       tiles,
       toolbox,
+      strategy,
       // TIGHTER LIMITS: Force perfect play
       clickLimit: Math.floor(arrows.length * (isElite ? 1.02 : 1.15)) + (toolbox?.rotations || 0) + (toolbox?.shifts || 0),
       timeLimit: isBlitz ? Math.max(12, arrows.length * 1.1) : Math.max(30, arrows.length * 3)
     };
 
-    if (isSolvable(level)) return level;
+    if (isSolvable(level)) {
+      // Final check: Don't return tiny levels for high indices
+      if (levelIdx > 10 && level.arrows.length < 5) continue;
+      return level;
+    }
   }
 
-  return { gridSize: 4, arrows: HAND_CRAFTED_LEVELS[0].arrows, clickLimit: 12, timeLimit: 60 };
+  // Robust fallback: Generates a guaranteed solvable 5x5 level if complex generation fails
+  const fallbackRng = new SeededRandom(levelIdx + 555);
+  const fallbackArrows: ArrowData[] = [];
+  const startX = Math.floor(fallbackRng.next() * 2);
+  const startY = Math.floor(fallbackRng.next() * 2);
+  
+  for (let i = 0; i < 7; i++) {
+    fallbackArrows.push({
+      id: `f-${levelIdx}-${i}`,
+      x: (startX + i) % 5,
+      y: (startY + Math.floor(i / 2)) % 5,
+      dir: fallbackRng.pick(['up', 'down', 'left', 'right']),
+      type: 'normal'
+    });
+  }
+
+  return { 
+    gridSize: 5, 
+    arrows: fallbackArrows,
+    clickLimit: 12,
+    timeLimit: 60,
+    strategy: 'Safety Fallback'
+  };
 }
 
 export const HAND_CRAFTED_LEVELS: Level[] = [
@@ -339,7 +419,8 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
       { id: '1-2', x: 2, y: 1, dir: 'right' },
     ],
     clickLimit: 10,
-    timeLimit: 120
+    timeLimit: 120,
+    strategy: 'Tutorial'
   },
   {
     gridSize: 4,
@@ -348,7 +429,8 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
       { id: 'rot-2', x: 1, y: 0, dir: 'left' },
     ],
     clickLimit: 15,
-    timeLimit: 150
+    timeLimit: 150,
+    strategy: 'Tutorial'
   },
   {
     gridSize: 4,
@@ -362,8 +444,34 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
 ];
 
 const TOTAL_LEVELS_COUNT = 600;
-export const LEVELS: Level[] = [...HAND_CRAFTED_LEVELS];
+const generatedLevels: (Level | null)[] = new Array(TOTAL_LEVELS_COUNT).fill(null);
 
-for (let i = HAND_CRAFTED_LEVELS.length; i < TOTAL_LEVELS_COUNT; i++) {
-  LEVELS.push(generateProceduralLevel(i));
+HAND_CRAFTED_LEVELS.forEach((level, i) => {
+  generatedLevels[i] = level;
+});
+
+/**
+ * Get level by index, generating it lazily if not already created.
+ */
+export function getLevel(idx: number): Level {
+  if (idx < 0 || idx >= TOTAL_LEVELS_COUNT) return HAND_CRAFTED_LEVELS[0];
+  if (!generatedLevels[idx]) {
+    generatedLevels[idx] = generateProceduralLevel(idx);
+  }
+  return generatedLevels[idx]!;
 }
+
+/**
+ * Metadata for all levels (e.g. for level selector UI)
+ */
+export const LEVEL_METADATA = Array.from({ length: TOTAL_LEVELS_COUNT }).map((_, i) => {
+  // We can pre-calculate or estimate grid size for the menu
+  let gridSize = 4;
+  if (i > 15) gridSize = 5;
+  if (i > 50) gridSize = 6;
+  if (i > 120) gridSize = 7;
+  if (i > 220) gridSize = 8;
+  if (i > 351) gridSize = 9;
+  if (i > 480) gridSize = 10;
+  return { id: i, gridSize };
+});

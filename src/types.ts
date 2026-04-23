@@ -30,4 +30,5 @@ export interface Level {
   toolbox?: ToolboxConfig;
   clickLimit?: number;
   timeLimit?: number;
+  strategy?: string;
 }

@@ -28,7 +28,7 @@ import {
   RotateCcw as RefreshCw
 } from 'lucide-react';
 import { Direction, ArrowData, Level, TileData, ToolboxConfig } from './types';
-import { LEVELS } from './levels';
+import { getLevel, LEVEL_METADATA } from './levels';
 import { soundService } from './services/soundService';
 
 /**
@@ -39,7 +39,7 @@ import { soundService } from './services/soundService';
 export default function App() {
   const [currentLevelIdx, setCurrentLevelIdx] = useState(() => {
     const saved = localStorage.getItem('arrow-escape-level');
-    return saved ? Math.min(parseInt(saved), LEVELS.length - 1) : 0;
+    return saved ? Math.min(parseInt(saved), LEVEL_METADATA.length - 1) : 0;
   });
   const [maxReachedLevel, setMaxReachedLevel] = useState(() => {
     const saved = localStorage.getItem('arrow-escape-max-level');
@@ -67,7 +67,7 @@ export default function App() {
     return saved === 'true';
   });
   
-  const currentLevel = LEVELS[currentLevelIdx];
+  const currentLevel = useMemo(() => getLevel(currentLevelIdx), [currentLevelIdx]);
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
@@ -390,7 +390,7 @@ export default function App() {
 
   const nextLevel = () => {
     if (!isMuted) soundService.playClick();
-    if (currentLevelIdx < LEVELS.length - 1) {
+    if (currentLevelIdx < LEVEL_METADATA.length - 1) {
       setCurrentLevelIdx(prev => prev + 1);
     }
   };
@@ -458,9 +458,16 @@ export default function App() {
         {/* Left Sidebar */}
         <aside className="hidden lg:flex flex-col gap-5">
           <div className="glass-panel rounded-[20px] p-6">
-            <span className="inline-block px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-xs font-bold mb-4 uppercase tracking-wider">
-              Stage {currentLevelIdx + 1}
-            </span>
+            <div className="flex items-center justify-between mb-4">
+              <span className="inline-block px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-xs font-bold uppercase tracking-wider">
+                Stage {currentLevelIdx + 1}
+              </span>
+              {currentLevel.strategy && (
+                <span className="text-[10px] font-black text-[#818cf8] uppercase tracking-tighter opacity-80">
+                  {currentLevel.strategy}
+                </span>
+              )}
+            </div>
             <div className="space-y-4">
               <div>
                 <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-widest mb-2">Core Logic</h3>
@@ -515,12 +522,13 @@ export default function App() {
             </button>
             <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
             <div className="grid grid-cols-5 gap-1.5">
-              {LEVELS.slice(Math.max(0, currentLevelIdx - 10), Math.min(LEVELS.length, currentLevelIdx + 15)).map((_, i) => {
+              {Array.from({ length: 25 }).map((_, i) => {
                 const actualIdx = i + Math.max(0, currentLevelIdx - 10);
+                if (actualIdx >= LEVEL_METADATA.length) return null;
                 return (
                   <button
                     key={actualIdx}
-                    onClick={() => setCurrentLevelIdx(actualIdx)}
+                    onClick={() => selectLevel(actualIdx)}
                     className={`
                       aspect-square rounded-md flex items-center justify-center text-[10px] font-bold transition-all
                       ${currentLevelIdx === actualIdx 
@@ -693,8 +701,8 @@ export default function App() {
                 </button>
               </div>
 
-                <div className="flex-1 overflow-y-auto px-2 scrollbar-hide grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 pb-8">
-                  {LEVELS.map((level, idx) => (
+                  <div className="flex-1 overflow-y-auto px-2 scrollbar-hide grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 pb-8">
+                  {LEVEL_METADATA.map((meta, idx) => (
                     <button
                       key={idx}
                       ref={currentLevelIdx === idx ? activeLevelRef : null}
@@ -709,7 +717,7 @@ export default function App() {
                       `}
                     >
                       <span className="text-lg font-black">{idx + 1}</span>
-                      <span className="text-[8px] uppercase tracking-tighter opacity-70 group-hover:opacity-100">{level.gridSize}x{level.gridSize}</span>
+                      <span className="text-[8px] uppercase tracking-tighter opacity-70 group-hover:opacity-100">{meta.gridSize}x{meta.gridSize}</span>
                       {idx > maxReachedLevel + 5 && (
                         <div className="absolute top-1 right-1 opacity-40">
                           <Lock size={8} />
@@ -1020,12 +1028,15 @@ const GameBoard = React.memo(({
                 <Trophy size={60} />
               </motion.div>
               <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Stage Clear</h2>
+              <div className="text-center italic text-[#94a3b8] text-xs font-medium uppercase tracking-[0.2em] mb-4 opacity-70">
+                Stage {currentLevelIdx + 1} / {LEVEL_METADATA.length}
+              </div>
               <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
               <button
-                onClick={currentLevelIdx < LEVELS.length - 1 ? nextLevel : handleReset}
+                onClick={currentLevelIdx < LEVEL_METADATA.length - 1 ? nextLevel : handleReset}
                 className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
               >
-                {currentLevelIdx < LEVELS.length - 1 ? 'Next Level' : 'Play Again'}
+                {currentLevelIdx < LEVEL_METADATA.length - 1 ? 'Next Level' : 'Play Again'}
                 <ChevronRight size={20} />
               </button>
             </motion.div>
