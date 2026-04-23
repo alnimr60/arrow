@@ -163,190 +163,172 @@ class SeededRandom {
   }
   pick<T>(arr: T[]): T { return arr[Math.floor(this.next() * arr.length)]; }
   range(min: number, max: number): number { return min + this.next() * (max - min); }
+  
+  // Stable Fisher-Yates Shuffle
+  shuffle<T>(array: T[]): T[] {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(this.next() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
 }
 
 /**
- * Procedural Level Generator with Archetypes and Inverse Physics
+ * Procedural Level Generator with Logical Depth Emphasis
  */
 export function generateProceduralLevel(levelIdx: number): Level {
-  const rng = new SeededRandom(levelIdx + 12345); // Offset to avoid simple patterns
+  const rng = new SeededRandom(levelIdx + 7777);
 
-  // Level Flavors: Diversity in pacing (Zig-Zag complexity)
+  // Faster grid expansion for more logical space
+  let gridSize = 4;
+  if (levelIdx > 15) gridSize = 5;
+  if (levelIdx > 50) gridSize = 6;
+  if (levelIdx > 120) gridSize = 7;
+  if (levelIdx > 220) gridSize = 8;
+  if (levelIdx > 351) gridSize = 9;
+  if (levelIdx > 480) gridSize = 10;
+
   const isElite = (levelIdx + 1) % 5 === 0;
   const isBlitz = (levelIdx + 1) % 7 === 0;
-  const isGiga = (levelIdx + 1) % 11 === 0;
 
-  // Distribute grid expansion across 100 levels
-  let gridSize = Math.min(10, 4 + Math.floor(levelIdx / 12));
-  if (isGiga) gridSize = Math.min(10, gridSize + 1);
-
-  // Density logic: Non-linear waves
-  const wave = Math.sin(levelIdx / 5) * 0.1;
-  const densityMultiplier = (isElite ? 0.6 : 0.35) + (levelIdx * 0.003) + wave;
-  const targetCount = Math.floor(gridSize * gridSize * Math.min(0.75, densityMultiplier));
-
-  // Expanded Archetypes for unique visual "fingerprints"
-  const archetypes = [
-    'cluster', 'orchard', 'symmetry', 'crossfire', 'perimeter', 
-    'spiral', 'vortex', 'checkerboard', 'columns', 'rows', 'dense-core', 'scattered'
-  ];
-  const archetype = rng.pick(archetypes);
+  // Higher density for more "overlap" and blocking chains
+  const baseDensity = 0.35;
+  const densityGrowth = Math.min(0.25, levelIdx * 0.001);
+  const densityMultiplier = baseDensity + densityGrowth + (isElite ? 0.12 : 0);
+  const targetCount = Math.floor(gridSize * gridSize * Math.min(0.7, densityMultiplier));
 
   let attempts = 0;
-  while (attempts < 30) {
+  while (attempts < 40) {
     attempts++;
     let arrows: ArrowData[] = [];
     let tiles: TileData[] = [];
     const occupied = new Set<string>();
 
-    // Gradually introduce Tiles (Gates and Conveyors)
-    const tileChance = isElite ? 0.8 : 0.4;
-    if (levelIdx > 20 && rng.next() < tileChance) {
-      const tileCount = Math.min(6, Math.floor(levelIdx / 15) + (isElite ? 2 : 0));
+    // Tiles (Gates: Strategic obstacles)
+    if (levelIdx > 12 && rng.next() < (isElite ? 0.8 : 0.4)) {
+      const tileCount = Math.min(4, Math.floor(levelIdx / 30) + 1);
       for (let j = 0; j < tileCount; j++) {
         const tx = Math.floor(rng.next() * gridSize);
         const ty = Math.floor(rng.next() * gridSize);
         if (!occupied.has(`${tx},${ty}`)) {
-          const types: TileType[] = ['conveyor-up', 'conveyor-down', 'conveyor-left', 'conveyor-right', 'gate-vertical', 'gate-horizontal'];
-          const tType = rng.pick(types);
-          const isOpen = tType.startsWith('gate') ? rng.next() < 0.5 : undefined;
-          tiles.push({ x: tx, y: ty, type: tType, isOpen });
+          const type: TileType = rng.pick(['gate-vertical', 'gate-horizontal']);
+          tiles.push({ x: tx, y: ty, type, isOpen: false });
           occupied.add(`${tx},${ty}`);
         }
       }
     }
 
+    /**
+     * INVERSE GENERATION LOGIC:
+     * We build the level by picking a location and "backing" an arrow into it.
+     * We prioritize placements that block other arrows.
+     */
     for (let i = 0; i < targetCount; i++) {
-      const candidates: { x: number, y: number, dir: Direction, type: ArrowType, score: number }[] = [];
-      const types: ArrowType[] = ['normal'];
-      
-      if (levelIdx > 8) types.push('rotator');
-      if (levelIdx > 18) types.push('shifter');
-      if (levelIdx > 35) types.push('locked');
-      if (levelIdx > 50 && rng.next() < 0.3) types.push('switch');
+        const candidates: { x: number, y: number, dir: Direction, type: ArrowType, score: number }[] = [];
+        
+        for (let x = 0; x < gridSize; x++) {
+            for (let y = 0; y < gridSize; y++) {
+                if (occupied.has(`${x},${y}`)) continue;
+                
+                for (const dir of ['up', 'down', 'left', 'right'] as Direction[]) {
+                    // Simulation check: Can this arrow EXIT if it were the only one?
+                    // (Inverse: Can it enter from the edge without hitting a tile?)
+                    if (!isPathBlocked({ x, y, dir }, [], tiles)) {
+                        let score = 10;
+                        
+                        // LOGICAL DEPTH HEURISTICS:
+                        // 1. Prefer picking a spot that BLOCKS an existing arrow
+                        const blockersCount = arrows.filter(a => {
+                            switch (a.dir) {
+                                case 'up': return a.x === x && a.y > y;
+                                case 'down': return a.x === x && a.y < y;
+                                case 'left': return a.y === y && a.x > x;
+                                case 'right': return a.y === y && a.x < x;
+                            }
+                        }).length;
+                        score += blockersCount * 40;
 
-      for (let x = 0; x < gridSize; x++) {
-        for (let y = 0; y < gridSize; y++) {
-          if (occupied.has(`${x},${y}`)) continue;
-          for (const dir of ['up', 'down', 'left', 'right'] as Direction[]) {
-            if (!isPathBlocked({ x, y, dir }, arrows, tiles)) {
-              let score = 0;
-              
-              // Enhanced Archetype Heuristics
-              const centerX = gridSize / 2;
-              const centerY = gridSize / 2;
-              const distFromCenter = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                        // 2. Prefer spots that are themselves blocked by tiles (forcing gate interaction)
+                        const tileBlocked = tiles.some(t => {
+                            switch (dir) {
+                                case 'up': return t.x === x && t.y < y;
+                                case 'down': return t.x === x && t.y > y;
+                                case 'left': return t.y === y && t.x < x;
+                                case 'right': return t.y === y && t.x > x;
+                            }
+                        });
+                        if (tileBlocked) score += 30;
 
-              switch (archetype) {
-                case 'cluster':
-                  arrows.forEach(ar => { if (Math.abs(ar.x - x) + Math.abs(ar.y - y) === 1) score += 20; });
-                  break;
-                case 'spiral':
-                  const angle = Math.atan2(y - centerY, x - centerX);
-                  const expectedAngle = (distFromCenter * 2) % (Math.PI * 2);
-                  if (Math.abs(angle - expectedAngle) < 0.5) score += 30;
-                  break;
-                case 'vortex':
-                  // Arrows point in a tangent direction to the center
-                  const dx = x - centerX;
-                  const dy = y - centerY;
-                  if (dir === 'up' && dx > 0) score += 20;
-                  if (dir === 'down' && dx < 0) score += 20;
-                  if (dir === 'left' && dy < 0) score += 20;
-                  if (dir === 'right' && dy > 0) score += 20;
-                  break;
-                case 'checkerboard':
-                  if ((x + y) % 2 === 0) score += 40;
-                  break;
-                case 'columns':
-                  if (x % 2 === 0) score += 30;
-                  break;
-                case 'rows':
-                  if (y % 2 === 0) score += 30;
-                  break;
-                case 'dense-core':
-                  score += (gridSize - distFromCenter) * 10;
-                  break;
-                case 'scattered':
-                  score += distFromCenter * 5;
-                  arrows.forEach(ar => { if (Math.abs(ar.x - x) + Math.abs(ar.y - y) < 3) score -= 10; });
-                  break;
-                case 'symmetry':
-                  if (occupied.has(`${gridSize - 1 - x},${gridSize - 1 - y}`)) score += 40;
-                  break;
-                case 'crossfire':
-                  arrows.forEach(ar => { if ((ar.x === x || ar.y === y) && (ar.dir === 'up' || ar.dir === 'down') !== (dir === 'up' || dir === 'down')) score += 25; });
-                  break;
-                case 'perimeter':
-                  if (x === 0 || x === gridSize - 1 || y === 0 || y === gridSize - 1) score += 30;
-                  break;
-              }
+                        // 3. Central bias for denser chains
+                        const distFromCenter = Math.abs(x - (gridSize/2)) + Math.abs(y - (gridSize/2));
+                        score += (gridSize - distFromCenter) * 5;
 
-              score += rng.next() * 15;
-              types.forEach(type => candidates.push({ x, y, dir, type, score }));
+                        // Types
+                        let type: ArrowType = 'normal';
+                        if (levelIdx > 8 && rng.next() < 0.2) type = 'rotator';
+                        else if (levelIdx > 18 && rng.next() < 0.15) type = 'shifter';
+                        else if (levelIdx > 35 && rng.next() < 0.1) type = 'locked';
+                        else if (levelIdx > 50 && rng.next() < 0.05) type = 'switch';
+
+                        score += rng.next() * 10;
+                        candidates.push({ x, y, dir, type, score });
+                    }
+                }
             }
-          }
         }
-      }
 
-      if (candidates.length === 0) break;
-      candidates.sort((a, b) => b.score - a.score);
-      const complexityFactor = isElite ? 2 : 6;
-      const best = candidates[Math.floor(rng.next() * Math.min(candidates.length, complexityFactor))];
-      
-      const newArrow: ArrowData = {
-        id: `l${levelIdx}-${i}-${rng.next().toString(36).substr(2, 4)}`,
-        x: best.x, y: best.y, dir: best.dir, type: best.type
-      };
+        if (candidates.length === 0) break;
+        candidates.sort((a,b) => b.score - a.score);
+        
+        // Pick from top candidates (higher difficulty = pick top scores)
+        const variance = isElite ? 2 : 4;
+        const best = candidates[Math.floor(rng.next() * Math.min(candidates.length, variance))];
+        
+        const newArrow: ArrowData = {
+          id: `l${levelIdx}-${i}-${rng.next().toString(36).substr(2, 4)}`,
+          x: best.x, y: best.y, dir: best.dir, type: best.type
+        };
 
-      // APPLY INVERSE PHYSICS
-      if (newArrow.type === 'rotator') {
-        const rotateCCW = (d: Direction): Direction => ({ up: 'left', left: 'down', down: 'right', right: 'up' } as Record<Direction, Direction>)[d];
-        arrows = arrows.map(a => (Math.abs(a.x - newArrow.x) + Math.abs(a.y - newArrow.y) === 1) ? { ...a, dir: rotateCCW(a.dir) } : a);
-      }
-      if (newArrow.type === 'switch') tiles = tiles.map(t => ({ ...t, isOpen: !t.isOpen }));
-      if (newArrow.type === 'shifter') {
-        arrows = arrows.map(a => {
-          const isSameCol = a.x === newArrow.x && (newArrow.dir === 'up' || newArrow.dir === 'down');
-          const isSameRow = a.y === newArrow.y && (newArrow.dir === 'left' || newArrow.dir === 'right');
-          if (isSameCol || isSameRow) {
-            let nx = a.x, ny = a.y;
-            if (newArrow.dir === 'up') ny++; if (newArrow.dir === 'down') ny--; if (newArrow.dir === 'left') nx++; if (newArrow.dir === 'right') nx--;
-            if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && !occupied.has(`${nx},${ny}`)) {
-              occupied.delete(`${a.x},${a.y}`); occupied.add(`${nx},${ny}`); return { ...a, x: nx, y: ny };
-            }
-          }
-          return a;
-        });
-      }
-
-      arrows.push(newArrow);
-      occupied.add(`${newArrow.x},${newArrow.y}`);
+        // Effects of "placing" (Inverse operation)
+        if (newArrow.type === 'rotator') {
+            const rotateCCW = (d: Direction): Direction => ({ up: 'left', left: 'down', down: 'right', right: 'up' } as Record<Direction, Direction>)[d];
+            arrows = arrows.map(a => (Math.abs(a.x - newArrow.x) + Math.abs(a.y - newArrow.y) === 1) ? { ...a, dir: rotateCCW(a.dir) } : a);
+        }
+        if (newArrow.type === 'switch') tiles = tiles.map(t => ({ ...t, isOpen: !t.isOpen }));
+        
+        arrows.push(newArrow);
+        occupied.add(`${newArrow.x},${newArrow.y}`);
     }
 
-    // Key management
+    // Secondary Logic: Ensure keys exist for locks
     if (arrows.some(a => a.type === 'locked')) {
-      const candidatesForKey = arrows.filter(a => a.type === 'normal' || a.type === 'rotator' || a.type === 'shifter');
-      if (candidatesForKey.length > 0) candidatesForKey[candidatesForKey.length - 1].type = 'key';
-      else arrows.forEach(a => a.type = 'normal');
+        const canBeKey = arrows.filter(a => a.type === 'normal');
+        if (canBeKey.length > 0) rng.pick(canBeKey).type = 'key';
+        else arrows = arrows.filter(a => a.type !== 'locked');
     }
 
+    // Dynamic Toolbox: Rare but powerful rotations/shifts
     const toolbox: ToolboxConfig | undefined = levelIdx > 25 ? {
-      rotations: Math.floor(rng.next() * (isElite ? 1 : 2)) + 1,
-      shifts: levelIdx > 50 ? Math.floor(rng.next() * 2) : 0
+      rotations: rng.next() < 0.3 ? 1 : 0,
+      shifts: levelIdx > 80 && rng.next() < 0.2 ? 1 : 0
     } : undefined;
 
-    const level: Level = { 
-      gridSize, 
-      arrows: arrows.sort(() => rng.next() - 0.5), 
-      tiles, toolbox,
-      clickLimit: Math.ceil(arrows.length * (isBlitz ? 1.05 : 1.3)),
-      timeLimit: isBlitz ? Math.max(20, arrows.length * 1.5) : Math.max(30, arrows.length * 3)
+    const level: Level = {
+      gridSize,
+      arrows: rng.shuffle(arrows),
+      tiles,
+      toolbox,
+      // TIGHTER LIMITS: Force perfect play
+      clickLimit: Math.floor(arrows.length * (isElite ? 1.02 : 1.15)) + (toolbox?.rotations || 0) + (toolbox?.shifts || 0),
+      timeLimit: isBlitz ? Math.max(12, arrows.length * 1.1) : Math.max(30, arrows.length * 3)
     };
+
     if (isSolvable(level)) return level;
   }
 
-  return { gridSize: 4, arrows: HAND_CRAFTED_LEVELS[0].arrows, clickLimit: 10, timeLimit: 60 };
+  return { gridSize: 4, arrows: HAND_CRAFTED_LEVELS[0].arrows, clickLimit: 12, timeLimit: 60 };
 }
 
 export const HAND_CRAFTED_LEVELS: Level[] = [
