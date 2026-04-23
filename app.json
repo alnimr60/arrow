@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Arrow Escape",
+    "slug": "arrow-escape",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "https://picsum.photos/seed/arrow/512/512",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "https://picsum.photos/seed/arrow/512/512",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "web": {
+      "favicon": "https://picsum.photos/seed/arrow/32/32"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "https://picsum.photos/seed/arrow/512/512",
+        "backgroundColor": "#0f172a"
+      }
+    }
+  }
+}
