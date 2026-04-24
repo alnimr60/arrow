@@ -180,17 +180,27 @@ type GenerationStrategy = 'Critical Chain' | 'Dependency Web' | 'Sparse but Crit
 /**
  * Procedural Level Generator with Strategic Architectures
  */
-export function generateProceduralLevel(levelIdx: number): Level {
-  const rng = new SeededRandom(levelIdx + 7777);
+export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'invisible' = 'standard'): Level {
+  // Unique seed per mode + level combination
+  const seed = mode === 'standard' ? levelIdx + 7777 : levelIdx + 14000;
+  const rng = new SeededRandom(seed);
 
-  // Grid scaling
+  // Grid scaling - Adjusted for mode and 300 levels
   let gridSize = 4;
-  if (levelIdx > 15) gridSize = 5;
-  if (levelIdx > 50) gridSize = 6;
-  if (levelIdx > 120) gridSize = 7;
-  if (levelIdx > 220) gridSize = 8;
-  if (levelIdx > 351) gridSize = 9;
-  if (levelIdx > 480) gridSize = 10;
+  if (mode === 'standard') {
+    if (levelIdx > 15) gridSize = 5;
+    if (levelIdx > 50) gridSize = 6;
+    if (levelIdx > 120) gridSize = 7;
+    if (levelIdx > 220) gridSize = 8;
+    if (levelIdx > 351) gridSize = 9;
+    if (levelIdx > 480) gridSize = 10;
+  } else {
+    // Invisible mode starts small and stays manageable longer due to higher difficulty
+    if (levelIdx > 20) gridSize = 5;
+    if (levelIdx > 70) gridSize = 6;
+    if (levelIdx > 150) gridSize = 7;
+    if (levelIdx > 250) gridSize = 8;
+  }
 
   // Strategy Selection
   const strategies: GenerationStrategy[] = ['Critical Chain', 'Dependency Web', 'Sparse but Critical', 'Clustered Challenge'];
@@ -444,7 +454,7 @@ export const HAND_CRAFTED_LEVELS: Level[] = [
 ];
 
 const TOTAL_STANDARD_LEVELS = 600;
-const TOTAL_INVISIBLE_LEVELS = 100;
+const TOTAL_INVISIBLE_LEVELS = 300;
 
 const standardLevels: (Level | null)[] = new Array(TOTAL_STANDARD_LEVELS).fill(null);
 const invisibleLevels: (Level | null)[] = new Array(TOTAL_INVISIBLE_LEVELS).fill(null);
@@ -464,9 +474,8 @@ export function getLevel(idx: number, mode: 'standard' | 'invisible' = 'standard
   if (idx < 0 || idx >= total) return HAND_CRAFTED_LEVELS[0];
   
   if (!levels[idx]) {
-    // For invisible mode, we can use a different seed offset to ensure levels are not the same as standard
-    const seedOffset = isStandard ? 0 : 7000;
-    levels[idx] = generateProceduralLevel(idx + seedOffset);
+    // Pass the mode to generation so it can handle progression correctly
+    levels[idx] = generateProceduralLevel(idx, mode);
   }
   return levels[idx]!;
 }
@@ -487,11 +496,11 @@ export const getLevelMetadata = (mode: 'standard' | 'invisible' = 'standard') =>
       if (i > 351) gridSize = 9;
       if (i > 480) gridSize = 10;
     } else {
-      // Invisible mode progression (shorter, 100 stages)
-      if (i > 10) gridSize = 5;
-      if (i > 30) gridSize = 6;
-      if (i > 60) gridSize = 7;
-      if (i > 85) gridSize = 8;
+      // Invisible mode progression (now 300 stages)
+      if (i > 20) gridSize = 5;
+      if (i > 70) gridSize = 6;
+      if (i > 150) gridSize = 7;
+      if (i > 250) gridSize = 8;
     }
     return { id: i, gridSize };
   });

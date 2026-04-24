@@ -61,54 +61,66 @@ const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', 
   }, [mode]);
 
   return (
-    <div 
-      ref={boardRef}
-      className={`relative bg-[#0f172a] border-4 border-white/10 rounded-2xl p-3 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden pointer-events-none scale-100 md:scale-125 lg:scale-[1.4] transition-all duration-700`}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${level.gridSize}, 1fr)`,
-        gridTemplateRows: `repeat(${level.gridSize}, 1fr)`,
-        gap: '8px',
-        width: '320px',
-        height: '320px',
-      }}
-    >
-      {/* Grid Background Cells - Matches actual game */}
-      {Array.from({ length: level.gridSize * level.gridSize }).map((_, i) => (
-        <div key={i} className="bg-slate-800/50 rounded-lg" />
-      ))}
+    <div className="relative group/preview">
+      {/* Technical Brackets for Previews */}
+      <div className="panel-corner top-[-10px] left-[-10px] border-t-2 border-l-2 opacity-20 group-hover/preview:opacity-100 transition-opacity" />
+      <div className="panel-corner bottom-[-10px] right-[-10px] border-b-2 border-r-2 opacity-20 group-hover/preview:opacity-100 transition-opacity" />
 
-      {/* Invisible Overlay - Must be ABOVE arrows to hide them, but transparent center lets them through */}
-      {mode === 'invisible' && (
-        <div 
-          className="absolute inset-0 z-30 pointer-events-none"
-          style={{
-            background: `radial-gradient(circle 80px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 1) 100%)`
-          }}
-        />
-      )}
+      <div 
+        ref={boardRef}
+        className={`relative bg-[#020617] border-2 border-white/20 rounded-[32px] p-3 shadow-[0_40px_100px_rgba(0,0,0,0.8)] overflow-hidden pointer-events-none scale-100 md:scale-125 lg:scale-[1.4] transition-all duration-700`}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${level.gridSize}, 1fr)`,
+          gridTemplateRows: `repeat(${level.gridSize}, 1fr)`,
+          gap: '6px',
+          width: '300px',
+          height: '300px',
+        }}
+      >
+        {/* Dynamic Grid Glow - Shader effect */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] z-0" />
+        
+        {/* Grid Background Cells - Matches actual game */}
+        {Array.from({ length: level.gridSize * level.gridSize }).map((_, i) => (
+          <div key={i} className="bg-slate-900/40 rounded-xl" />
+        ))}
+
+        {/* Invisible Overlay */}
+        {mode === 'invisible' && (
+          <div 
+            className="absolute inset-0 z-30 pointer-events-none"
+            style={{
+              background: `radial-gradient(circle 80px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(2, 6, 23, 1) 100%)`
+            }}
+          />
+        )}
 
       {/* Arrows - Same visual logic as GameBoard */}
-      {level.arrows.map((arrow: ArrowData) => (
-        <div
-          key={arrow.id}
-          className="absolute flex items-center justify-center rounded-lg z-10"
-          style={{
-            width: `calc((100% - ${(level.gridSize - 1) * 8}px - 24px) / ${level.gridSize})`,
-            height: `calc((100% - ${(level.gridSize - 1) * 8}px - 24px) / ${level.gridSize})`,
-            left: `calc(12px + (100% - 16px) / ${level.gridSize} * ${arrow.x})`,
-            top: `calc(12px + (100% - 16px) / ${level.gridSize} * ${arrow.y})`,
-            backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
-                             arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
-                             arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
-                             arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' : 'transparent'
-          }}
-        >
-          <ArrowIcon arrow={arrow} />
-          {arrow.type === 'locked' && <Lock size={12} className="text-white/40" />}
-          {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
-        </div>
-      ))}
+      {level.arrows.map((arrow: ArrowData) => {
+        const cellSize = (300 - 24 - (level.gridSize - 1) * 6) / level.gridSize;
+        return (
+          <div
+            key={arrow.id}
+            className="absolute flex items-center justify-center rounded-lg z-10"
+            style={{
+              width: `${cellSize}px`,
+              height: `${cellSize}px`,
+              left: `${12 + arrow.x * (cellSize + 6)}px`,
+              top: `${12 + arrow.y * (cellSize + 6)}px`,
+              backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
+                               arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
+                               arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
+                               arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' : 'transparent'
+            }}
+          >
+            <ArrowIcon arrow={arrow} />
+            {arrow.type === 'locked' && <Lock size={12} className="text-white/40" />}
+            {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
+          </div>
+        );
+      })}
+      </div>
     </div>
   );
 };
@@ -487,140 +499,171 @@ export default function App() {
 
   if (currentScreen === 'menu') {
     return (
-      <div className="min-h-screen bg-[#020617] text-white flex flex-col md:flex-row overflow-hidden font-sans selection:bg-cyan-500/30">
+      <div className="min-h-screen bg-[#000000] text-white flex flex-col md:flex-row overflow-hidden font-sans selection:bg-cyan-500/30">
+        <div className="noise-overlay" />
+        
+        {/* Cinematic Scanline */}
+        <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[9998] overflow-hidden">
+          <div className="w-full h-[2px] bg-white animate-scanline" />
+        </div>
+
         {/* Left Side: Standard Mode */}
         <motion.button 
-          initial={{ x: -100, opacity: 0 }}
+          initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.8, ease: "circOut" }}
+          transition={{ duration: 1.2, ease: "circOut" }}
           onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
-          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700"
+          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10"
         >
-          {/* Background Ambient Glow */}
-          <div className="absolute inset-0 bg-cyan-950/10 group-hover:bg-cyan-900/20 transition-colors duration-700" />
+          {/* Post-processing shader vignette */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] z-[5]" />
           
-          {/* Animated Particles/Fog for Quality */}
-          <div className="absolute inset-0 opacity-20 pointer-events-none">
-            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-500 rounded-full blur-[120px] animate-pulse" />
-          </div>
-
+          {/* Background Ambient Glow */}
+          <div className="absolute inset-0 bg-cyan-950/[0.08] group-hover:bg-cyan-900/[0.15] transition-colors duration-1000" />
+          
           {/* Content Wrapper */}
-          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-6">
-            <motion.div 
-              initial={{ scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-              className="text-cyan-400"
-            >
-              <LayoutGrid size={48} strokeWidth={1.5} />
-            </motion.div>
+          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
+            <div className="relative">
+              <motion.div 
+                whileHover={{ rotate: 90 }}
+                className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
+              >
+                <LayoutGrid size={40} strokeWidth={1} />
+              </motion.div>
+              {/* Technical Brackets */}
+              <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
+              <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
+            </div>
             
-            <div className="space-y-2">
-              <h2 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter text-white group-hover:text-cyan-300 transition-colors">Standard</h2>
-              <p className="text-slate-400 text-sm md:text-base font-medium max-w-sm mx-auto leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
-                Master the art of logical sequence. <br className="hidden md:block"/>
-                Solve 600 precision-crafted tactical challenges.
+            <div className="space-y-3">
+              <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Standard</h2>
+              <div className="h-[1px] w-12 bg-cyan-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
+              <p className="text-slate-500 text-xs md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
+                The Logic Engine <br />
+                Tactical untangling in 600 stages
               </p>
             </div>
 
             {/* Realistic Game Preview */}
-            <div className="mt-4 relative group-hover:scale-105 transition-transform duration-700 ease-out pointer-events-none">
+            <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none">
               <MenuPreviewBoard mode="standard" levelIdx={4} />
             </div>
 
-            <div className="pt-4">
-               <div className="inline-flex items-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all">
-                 <Trophy size={14} />
-                 Stage {standardMaxLevel + 1} Cleared
+            <div className="pt-6">
+               <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all relative">
+                 <div className="absolute top-0 left-0 w-1 h-1 bg-cyan-500" />
+                 <Trophy size={12} className="opacity-60" />
+                 <span>Sector {standardMaxLevel + 1} Logged</span>
                </div>
             </div>
           </div>
 
-          {/* Hover Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+          {/* High Contrast Hover Glow */}
+          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
         </motion.button>
 
         {/* Right Side: Invisible Mode */}
         <motion.button 
-          initial={{ x: 100, opacity: 0 }}
+          initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.8, ease: "circOut" }}
+          transition={{ duration: 1.2, ease: "circOut" }}
           onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
-          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center bg-[#020617] overflow-hidden transition-all duration-700"
+          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center bg-[#000000] overflow-hidden transition-all duration-700"
         >
-          {/* Background Ambient Glow */}
-          <div className="absolute inset-0 bg-purple-950/10 group-hover:bg-purple-900/20 transition-colors duration-700" />
+          {/* Post-processing shader vignette */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)] z-[5]" />
           
-          {/* Animated Particles/Fog for Quality */}
-          <div className="absolute inset-0 opacity-20 pointer-events-none">
-            <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-500 rounded-full blur-[120px] animate-pulse" />
-          </div>
-
+          {/* Background Ambient Glow */}
+          <div className="absolute inset-0 bg-purple-950/[0.08] group-hover:bg-purple-900/[0.15] transition-colors duration-1000" />
+          
           {/* Content Wrapper */}
-          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-6">
-            <motion.div 
-              initial={{ scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-              className="text-purple-400"
-            >
-              <EyeOff size={48} strokeWidth={1.5} />
-            </motion.div>
+          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
+            <div className="relative">
+              <motion.div 
+                whileHover={{ scale: 1.2 }}
+                className="text-purple-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
+              >
+                <EyeOff size={40} strokeWidth={1} />
+              </motion.div>
+              {/* Technical Brackets */}
+              <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
+              <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
+            </div>
             
-            <div className="space-y-2">
-              <h2 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter text-white group-hover:text-purple-300 transition-colors">Invisible</h2>
-              <p className="text-slate-400 text-sm md:text-base font-medium max-w-sm mx-auto leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
-                Trust your instincts and memory. <br className="hidden md:block"/>
-                100 specialized stages hidden in total shadow.
+            <div className="space-y-3">
+              <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Invisible</h2>
+              <div className="h-[1px] w-12 bg-purple-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
+              <p className="text-slate-500 text-xs md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
+                The Memory Void <br />
+                Subliminal navigation in 300 stages
               </p>
             </div>
 
-            {/* Realistic Game Preview - Dark Mode with Scan Animation */}
-            <div className="mt-4 relative group-hover:scale-105 transition-transform duration-700 ease-out pointer-events-none">
+            {/* Realistic Game Preview */}
+            <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none">
               <MenuPreviewBoard mode="invisible" levelIdx={12} />
             </div>
 
-            <div className="pt-4">
-               <div className="inline-flex items-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all">
-                 <Clock size={14} />
-                 {invisibleMaxLevel + 1} / 100 Challenges
+            <div className="pt-6">
+               <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all relative">
+                 <div className="absolute top-0 left-0 w-1 h-1 bg-purple-500" />
+                 <Clock size={12} className="opacity-60" />
+                 <span>Core {invisibleMaxLevel + 1} Synchronized</span>
                </div>
             </div>
           </div>
 
-          {/* Hover Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+          {/* High Contrast Hover Glow */}
+          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
         </motion.button>
 
         {/* Global UI Overlays */}
-        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
+        <div className="absolute top-10 left-10 z-50 pointer-events-auto hidden md:block">
           <motion.div 
-            initial={{ y: -20, opacity: 0 }} 
-            animate={{ y: 0, opacity: 1 }}
-            className="flex items-center gap-4 bg-black/40 backdrop-blur-xl px-6 py-3 rounded-full border border-white/10 shadow-2xl pointer-events-auto"
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-6"
           >
-            <h1 className="text-2xl font-black italic uppercase tracking-tight bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Arrow Escape</h1>
-            <div className="w-[1px] h-4 bg-white/10 mx-2" />
-            <button 
-              onClick={() => setIsMuted(!isMuted)}
-              className="text-slate-400 hover:text-white transition-colors p-1"
-            >
-              {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">Arrow Escape</h1>
+              <div className="text-[8px] text-cyan-500 font-black uppercase tracking-[0.4em]">Advanced Pulse Logic</div>
+            </div>
           </motion.div>
         </div>
 
-        {/* Footer info for mobile */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 md:hidden opacity-30 text-[10px] font-black uppercase tracking-[0.4em] pointer-events-none">
-          Logic Engine Ver. 3.0
+        <div className="absolute top-10 right-10 z-50 flex items-center gap-4">
+           <button 
+              onClick={() => setIsMuted(!isMuted)}
+              className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-none border border-white/10 text-slate-400 hover:text-white transition-all"
+            >
+              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            </button>
+        </div>
+
+        <div className="absolute bottom-6 right-10 z-50 opacity-20 text-[8px] font-black uppercase tracking-[0.5em] text-white">
+          System Core 4.2 // Stability Verified
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen text-[#f8fafc] font-sans flex flex-col">
+    <div className="min-h-screen bg-[#000000] text-[#f8fafc] font-sans flex flex-col relative overflow-hidden">
+      <div className="noise-overlay" />
+      
+      {/* Cinematic Background Shaders */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className={`absolute top-0 left-0 w-full h-full opacity-30 transition-colors duration-1000 ${
+          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_20%_20%,#083344_0%,transparent_50%)]' : 'bg-[radial-gradient(circle_at_20%_20%,#3b0764_0%,transparent_50%)]'
+        }`} />
+        <div className={`absolute bottom-0 right-0 w-full h-full opacity-30 transition-colors duration-1000 ${
+          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_80%_80%,#1e1b4b_0%,transparent_50%)]' : 'bg-[radial-gradient(circle_at_80%_80%,#4c1d95_0%,transparent_50%)]'
+        }`} />
+      </div>
+
       {/* Header */}
       <nav 
-        className="h-20 lg:h-24 px-6 lg:px-10 flex items-center justify-between border-b border-white/10 bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-40"
+        className="h-20 lg:h-24 px-6 lg:px-10 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-40"
         style={{ paddingTop: 'var(--safe-top)', height: 'calc(5rem + var(--safe-top))' }}
       >
         <div className="flex items-center gap-4">
@@ -995,7 +1038,7 @@ function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, lab
 // Optimized Arrow Icon with memo
 const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
   const rotation = { up: 0, right: 90, down: 180, left: 270 }[arrow.dir];
-  // Arrow colors from design
+  // Arrow colors with higher contrast for high-end look
   const colorClass = {
     up: 'text-[#f43f5e]',    // Rose
     right: 'text-[#10b981]',  // Emerald
@@ -1003,28 +1046,28 @@ const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
     left: 'text-[#3b82f6]'    // Blue
   }[arrow.dir];
 
-  // Using a custom triangle-like icon matching the design's CSS ::after
+  const specialtyIcon = () => {
+    switch (arrow.type) {
+      case 'rotator': return <RotateCcw size={10} className="text-white/40" />;
+      case 'shifter': return <Move size={10} className="text-white/40" />;
+      case 'switch': return <div className="w-1.5 h-1.5 bg-pink-400 rounded-sm rotate-45 shadow-[0_0_8px_rgba(244,114,182,0.6)]" />;
+      default: return null;
+    }
+  };
+
   return (
     <div 
-      className={`relative w-full h-full flex items-center justify-center transition-transform ${colorClass}`}
+      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass} group-hover:drop-shadow-[0_0_12px_currentColor]`}
       style={{ transform: `rotate(${rotation}deg)` }}
     >
-      <svg width="70%" height="70%" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-[0_0_8px_rgba(0,0,0,0.5)]">
-        <path d="M12 4L4 18H20L12 4Z" />
+      <svg width="75%" height="75%" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">
+        <path d="M12 2L2 19H22L12 2Z" />
       </svg>
-      {arrow.type === 'rotator' && (
+      {arrow.type && arrow.type !== 'normal' && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <RotateCcw size={10} className="text-white/30" />
-        </div>
-      )}
-      {arrow.type === 'shifter' && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Move size={10} className="text-white/30" />
-        </div>
-      )}
-      {arrow.type === 'switch' && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-1.5 h-1.5 bg-pink-400 rounded-sm rotate-45" />
+          <div className="mt-4">
+            {specialtyIcon()}
+          </div>
         </div>
       )}
     </div>
@@ -1068,74 +1111,89 @@ const GameBoard = React.memo(({
   };
 
   const handlePointerLeave = () => {
-    if (gameMode === 'hidden') {
+    if (gameMode === 'invisible') {
       setPointerPos({ x: -1000, y: -1000 });
     }
   };
 
   return (
-    <section className="flex flex-col items-center justify-center relative touch-none">
-      <div 
-        ref={boardRef}
-        onPointerMove={handlePointer}
-        onPointerDown={handlePointer}
-        onPointerLeave={handlePointerLeave}
-        className="relative bg-[#0f172a]/50 border-4 border-white/10 rounded-xl p-3 shadow-2xl overflow-hidden"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
-          gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
-          gap: '8px',
-          width: 'min(90vw, 450px)',
-          height: 'min(90vw, 450px)',
-          cursor: gameMode === 'invisible' ? 'none' : 'default'
-        }}
-      >
-        {/* Dark Overlay for Invisible Mode */}
-        {gameMode === 'invisible' && (
-          <div 
-            className="absolute inset-0 z-20 pointer-events-none"
-            style={{
-              background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(15, 23, 42, 1) 90%)`
-            }}
-          />
-        )}
-        {/* Cell Grid Background */}
-        {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
-          <div key={i} className="bg-slate-800/50 rounded-lg" />
-        ))}
+    <section className="flex flex-col items-center justify-center relative touch-none py-8">
+      <div className="relative group/board">
+        {/* Technical Corner Brackets for Board */}
+        <div className="panel-corner top-[-10px] left-[-10px] border-t-2 border-l-2 opacity-40 group-hover/board:opacity-100 transition-opacity" />
+        <div className="panel-corner bottom-[-10px] right-[-10px] border-b-2 border-r-2 opacity-40 group-hover/board:opacity-100 transition-opacity" />
 
-        {/* Tiles: Conveyors, Gates, etc. */}
-        {tiles.map((tile: TileData, i: number) => (
-          <div 
-            key={`tile-${i}`}
-            className={`
-              absolute rounded-lg flex items-center justify-center opacity-60
-              ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
-              ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
-            `}
-            style={{
-              width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-              height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-              left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.x})`,
-              top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${tile.y})`,
-            }}
-          >
-            {tile.type.startsWith('conveyor') && (
-              <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
-            )}
-            {tile.type.startsWith('gate') && (
-              tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
-            )}
-          </div>
-        ))}
+        <div 
+          ref={boardRef}
+          onPointerMove={handlePointer}
+          onPointerDown={handlePointer}
+          onPointerLeave={handlePointerLeave}
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[32px] p-4 shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
+            gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
+            gap: '8px',
+            width: 'min(90vw, 480px)',
+            height: 'min(90vw, 480px)',
+            cursor: gameMode === 'invisible' ? 'none' : 'default'
+          }}
+        >
+          {/* Internal Board Ambient Glow */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] pointer-events-none z-0" />
+
+          {/* Dark Overlay for Invisible Mode */}
+          {gameMode === 'invisible' && (
+            <div 
+              className="absolute inset-0 z-20 pointer-events-none"
+              style={{
+                background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(2, 6, 23, 1) 100%)`
+              }}
+            />
+          )}
+
+          {/* Cell Grid Background - High contrast style */}
+          {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
+            <div key={i} className="bg-slate-900/40 rounded-xl" />
+          ))}
+
+          {/* Tiles: Conveyors, Gates, etc. */}
+          {tiles.map((tile: TileData, i: number) => {
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${tile.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${tile.y} * (${cellSize} + 8px))`;
+            
+            return (
+              <div 
+                key={`tile-${i}`}
+                className={`
+                  absolute rounded-lg flex items-center justify-center opacity-60
+                  ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
+                  ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
+                `}
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  left: offsetX,
+                  top: offsetY,
+                }}
+              >
+                {tile.type.startsWith('conveyor') && (
+                  <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
+                )}
+                {tile.type.startsWith('gate') && (
+                  tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
+                )}
+              </div>
+            );
+          })}
 
         {/* Ghost Path Indicator (Launch Beam) */}
         <AnimatePresence>
           {ghostPath && (() => {
-            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`;
-            const cellOffset = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.x})`;
-            const cellOffsetTop = `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${ghostPath.y})`;
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${ghostPath.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${ghostPath.y} * (${cellSize} + 8px))`;
             
             const style: React.CSSProperties = {
               position: 'absolute',
@@ -1150,28 +1208,28 @@ const GameBoard = React.memo(({
             const fadeColor = 'rgba(34, 211, 238, 0)';
 
             if (ghostPath.dir === 'right') {
-              style.left = cellOffset;
-              style.right = '12px';
-              style.top = cellOffsetTop;
+              style.left = offsetX;
+              style.right = '16px';
+              style.top = offsetY;
               style.height = cellSize;
               style.background = `linear-gradient(to right, ${beamColor}, ${fadeColor})`;
             } else if (ghostPath.dir === 'left') {
-              style.left = '12px';
-              style.width = `calc(${cellOffset} + ${cellSize} - 12px)`;
-              style.top = cellOffsetTop;
+              style.left = '16px';
+              style.width = `calc(${offsetX} + ${cellSize} - 16px)`;
+              style.top = offsetY;
               style.height = cellSize;
               style.background = `linear-gradient(to left, ${beamColor}, ${fadeColor})`;
             } else if (ghostPath.dir === 'down') {
-              style.left = cellOffset;
+              style.left = offsetX;
               style.width = cellSize;
-              style.top = cellOffsetTop;
-              style.bottom = '12px';
+              style.top = offsetY;
+              style.bottom = '16px';
               style.background = `linear-gradient(to bottom, ${beamColor}, ${fadeColor})`;
             } else if (ghostPath.dir === 'up') {
-              style.left = cellOffset;
+              style.left = offsetX;
               style.width = cellSize;
-              style.top = '12px';
-              style.height = `calc(${cellOffsetTop} + ${cellSize} - 12px)`;
+              style.top = '16px';
+              style.height = `calc(${offsetY} + ${cellSize} - 16px)`;
               style.background = `linear-gradient(to top, ${beamColor}, ${fadeColor})`;
             }
 
@@ -1201,6 +1259,10 @@ const GameBoard = React.memo(({
             const isShaking = shakeId === arrow.id;
             const isHinted = hintId === arrow.id;
             const isLocked = arrow.type === 'locked' && hasKeys;
+
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${arrow.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${arrow.y} * (${cellSize} + 8px))`;
             
             return (
               <motion.button
@@ -1223,15 +1285,9 @@ const GameBoard = React.memo(({
                 whileTap={{ scale: isLocked ? 1 : 0.9 }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
-                onTouchStart={(e) => {
-                  e.preventDefault();
+                onClick={() => {
                   setHoveredArrowId(arrow.id);
                   handleArrowClick(arrow);
-                }}
-                onPointerDown={(e) => {
-                  if (e.pointerType === 'mouse') {
-                    handleArrowClick(arrow);
-                  }
                 }}
                 className={`
                   absolute flex items-center justify-center rounded-lg transition-all duration-300
@@ -1243,10 +1299,10 @@ const GameBoard = React.memo(({
                   z-10
                 `}
                 style={{
-                  width: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                  height: `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 24px) / ${currentLevel.gridSize})`,
-                  left: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.x})`,
-                  top: `calc(12px + (100% - 16px) / ${currentLevel.gridSize} * ${arrow.y})`,
+                  width: cellSize,
+                  height: cellSize,
+                  left: offsetX,
+                  top: offsetY,
                   backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
                                    arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
                                    arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
@@ -1326,6 +1382,7 @@ const GameBoard = React.memo(({
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
       </div>
     </section>
   );
