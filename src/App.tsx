@@ -25,6 +25,7 @@ import {
   VolumeX,
   Clock,
   AlertTriangle,
+  Settings,
   RotateCcw as RefreshCw,
   Eye,
   EyeOff
@@ -38,7 +39,20 @@ import { soundService } from './services/soundService';
  * A logic game where you untangle arrows by removing them in the correct order.
  */
 
-// Sub-component for realistic menu previews
+// Noise Overlay for technical texture
+const NoiseOverlay = () => (
+  <div className="fixed inset-0 z-[100] pointer-events-none opacity-[0.03] mix-blend-overlay">
+    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+      <filter id="noise">
+        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+        <feColorMatrix type="saturate" values="0" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#noise)" />
+    </svg>
+  </div>
+);
+
+// Realistic Menu Previews
 const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', levelIdx: number }) => {
   const level = useMemo(() => getLevel(levelIdx, mode), [levelIdx, mode]);
   const [pointerPos, setPointerPos] = useState({ x: 150, y: 150 });
@@ -219,7 +233,7 @@ export default function App() {
 
   // Timer Effect: Responsive 100ms update for "counting moments"
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0 || showVictory || showGameOver) return;
+    if (timeLeft === null || timeLeft <= 0 || showVictory || showGameOver || currentScreen !== 'game') return;
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
@@ -243,7 +257,7 @@ export default function App() {
     }, 100); 
 
     return () => clearInterval(timer);
-  }, [showVictory, showGameOver, isMuted, timeLeft === null, gameMode]);
+  }, [showVictory, showGameOver, isMuted, timeLeft === null, gameMode, currentScreen]);
 
   // Initial Level
   useEffect(() => {
@@ -406,6 +420,17 @@ export default function App() {
     }
 
     if (arrow.type === 'rotator') {
+      const neighborsToRotate = arrows.filter(a => {
+        const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
+        return isNeighbor && !removedIds.has(a.id) && a.id !== arrow.id;
+      });
+      
+      neighborsToRotate.forEach(n => {
+        // Flash shake effect for visual feedback
+        setShakeId(n.id);
+      });
+      setTimeout(() => setShakeId(null), 300);
+
       setArrows(prev => prev.map(a => {
         const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
         if (isNeighbor && !removedIds.has(a.id) && a.id !== arrow.id) {
@@ -550,206 +575,140 @@ export default function App() {
 
   if (currentScreen === 'menu' || currentScreen === 'timedConfig' || currentScreen === 'timedResult') {
     return (
-      <div className="min-h-screen bg-[#000000] text-white flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-cyan-500/30">
-        {/* Removed noise-overlay and scanlines from menu */}
+      <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-[#22d3ee]/30 perspective-[2000px]">
+        <NoiseOverlay />
         
-        <div className="flex flex-col md:flex-row w-full h-full">
-          {/* Left Side: Standard Mode */}
-          <motion.button 
-            initial={{ x: -20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ duration: 1.2, ease: "circOut" }}
-            onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
-            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10"
-          >
-            {/* Post-processing shader vignette */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] z-[5]" />
-            
-            {/* Background Ambient Glow */}
-            <div className="absolute inset-0 bg-cyan-950/[0.08] group-hover:bg-cyan-900/[0.15] transition-colors duration-1000" />
-            
-            {/* Content Wrapper */}
-            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
-              <div className="relative">
-                <motion.div 
-                  whileHover={{ rotate: 90 }}
-                  className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
-                >
-                  <LayoutGrid size={40} strokeWidth={1} />
-                </motion.div>
-                {/* Technical Brackets */}
-                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
-                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
-              </div>
-              
-              <div className="space-y-3">
-                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Standard</h2>
-                <div className="h-[1px] w-12 bg-cyan-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
-                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
-                  The Logic Engine <br />
-                  Tactical untangling in 600 stages
-                </p>
-              </div>
-
-              {/* Realistic Game Preview */}
-              <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none scale-75">
-                <MenuPreviewBoard mode="standard" levelIdx={4} />
-              </div>
-
-              <div className="pt-6">
-                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all relative">
-                  <div className="absolute top-0 left-0 w-1 h-1 bg-cyan-500" />
-                  <Trophy size={12} className="opacity-60" />
-                  <span>Sector {standardMaxLevel + 1} Logged</span>
-                </div>
-              </div>
-            </div>
-
-            {/* High Contrast Hover Glow */}
-            <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-          </motion.button>
-
-          {/* Middle Side: Timed Rush */}
-          <motion.button 
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 1.2, delay: 0.1, ease: "circOut" }}
-            onClick={() => { setGameMode('timed'); setCurrentScreen('timedConfig'); }}
-            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10 bg-[#050505]"
-          >
-            {/* Post-processing shader vignette */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.5)_100%)] z-[5]" />
-            
-            {/* Background Ambient Glow */}
-            <div className="absolute inset-0 bg-amber-950/[0.08] group-hover:bg-amber-900/[0.15] transition-colors duration-1000" />
-            
-            {/* Content Wrapper */}
-            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
-              <div className="relative">
-                <motion.div 
-                  animate={{ rotate: [0, 360] }}
-                  transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-                  className="text-amber-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
-                >
-                  <Clock size={40} strokeWidth={1} />
-                </motion.div>
-                {/* Technical Brackets */}
-                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l border-amber-500/50" />
-                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r border-amber-500/50" />
-              </div>
-              
-              <div className="space-y-3">
-                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Timed Rush</h2>
-                <div className="h-[1px] w-12 bg-amber-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
-                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
-                  System Overload <br />
-                  Infinite generation vs clock
-                </p>
-              </div>
-
-              <motion.div 
-                className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 bg-amber-500/10 p-12 rounded-full border border-amber-500/20 blur-sm group-hover:blur-none"
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <RefreshCw size={48} className="text-amber-500/20" />
-              </motion.div>
-
-              <div className="pt-6">
-                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-amber-500/50 group-hover:text-amber-400 transition-all relative">
-                  <div className="absolute top-0 left-0 w-1 h-1 bg-amber-500" />
-                  <Clock size={12} className="opacity-60" />
-                  <span>Infinite Stream Ready</span>
-                </div>
-              </div>
-            </div>
-
-            {/* High Contrast Hover Glow */}
-            <div className="absolute inset-0 bg-gradient-to-t from-amber-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-          </motion.button>
-
-          {/* Right Side: Invisible Mode */}
-          <motion.button 
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ duration: 1.2, ease: "circOut" }}
-            onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
-            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center bg-[#000000] overflow-hidden transition-all duration-700 hover:z-10"
-          >
-            {/* Post-processing shader vignette */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)] z-[5]" />
-            
-            {/* Background Ambient Glow */}
-            <div className="absolute inset-0 bg-purple-950/[0.08] group-hover:bg-purple-900/[0.15] transition-colors duration-1000" />
-            
-            {/* Content Wrapper */}
-            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
-              <div className="relative">
-                <motion.div 
-                  whileHover={{ scale: 1.2 }}
-                  className="text-purple-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
-                >
-                  <EyeOff size={40} strokeWidth={1} />
-                </motion.div>
-                {/* Technical Brackets */}
-                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
-                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
-              </div>
-              
-              <div className="space-y-3">
-                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Invisible</h2>
-                <div className="h-[1px] w-12 bg-purple-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
-                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
-                  The Memory Void <br />
-                  Subliminal navigation in 300 stages
-                </p>
-              </div>
-
-              {/* Realistic Game Preview */}
-              <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none scale-75">
-                <MenuPreviewBoard mode="invisible" levelIdx={12} />
-              </div>
-
-              <div className="pt-6">
-                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all relative">
-                  <div className="absolute top-0 left-0 w-1 h-1 bg-purple-500" />
-                  <Clock size={12} className="opacity-60" />
-                  <span>Core {invisibleMaxLevel + 1} Synchronized</span>
-                </div>
-              </div>
-            </div>
-
-            {/* High Contrast Hover Glow */}
-            <div className="absolute inset-0 bg-gradient-to-t from-purple-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-          </motion.button>
+        {/* Technical HUD Frame - Softened */}
+        <div className="fixed inset-0 pointer-events-none z-50 border-[8px] md:border-[16px] border-black border-opacity-40" />
+        <div className="fixed inset-4 md:inset-8 pointer-events-none z-50 border border-white/5 rounded-[2rem]" />
+        
+        {/* HUD Elements */}
+        <div className="fixed top-10 left-10 md:top-14 md:left-14 z-[60] flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-[#22d3ee] rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
+            <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">ARROW ESCAPE</h1>
+          </div>
+          <div className="text-[9px] text-[#22d3ee] font-black uppercase tracking-[0.4em] opacity-60">System Core 4.3 // Optimal</div>
         </div>
 
-        {/* Global UI Overlays */}
-        <div className="absolute top-10 left-10 z-50 pointer-events-auto hidden md:block">
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-6"
+        <div className="fixed bottom-14 left-14 z-[60] hidden md:block">
+          <div className="space-y-1">
+            <div className="text-[8px] font-black uppercase tracking-[0.4em] text-white/20">Operational Status</div>
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className={`w-3 h-1 rounded-full ${i < 4 ? 'bg-[#22d3ee]/40' : 'bg-white/5'}`} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="fixed top-10 right-10 md:top-14 md:right-14 z-[60] flex gap-4 pointer-events-auto">
+          <button 
+            onClick={() => setIsMuted(!isMuted)}
+            className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all group"
           >
-            <div className="flex flex-col">
-              <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">Arrow Escape</h1>
-              <div className="text-[8px] text-cyan-500 font-black uppercase tracking-[0.4em]">Advanced Pulse Logic</div>
+            <div className="absolute inset-0 bg-[#22d3ee]/0 group-hover:bg-[#22d3ee]/5 rounded-xl transition-colors" />
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+        </div>
+
+        {/* Main Content: 3D Mode Gallery */}
+        <div className="flex flex-col md:flex-row w-full max-w-7xl h-full items-center justify-center gap-4 md:gap-8 px-6 md:px-12 relative z-10 pt-24 pb-12 md:pt-0">
+          
+          {/* Mode 1: Standard */}
+          <motion.div 
+            initial={{ opacity: 0, x: -50, rotateY: 30 }}
+            animate={{ opacity: 1, x: 0, rotateY: -10 }}
+            whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="relative w-full md:w-[30%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
+            onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
+          >
+            <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-[#22d3ee]/40 group-hover/mode:shadow-[0_0_60px_rgba(34,211,238,0.1)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.1)_0%,transparent_70%)]" />
+              <div className="relative h-full flex flex-col p-6 md:p-8">
+                <div className="mb-auto">
+                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-[#22d3ee] mb-2 opacity-70">Protocol 01</div>
+                  <h2 className="text-2xl md:text-4xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Standard</h2>
+                </div>
+                <div className="flex-1 flex items-center justify-center py-2">
+                  <div className="scale-[0.5] md:scale-75 group-hover/mode:scale-80 transition-transform duration-700">
+                    <MenuPreviewBoard mode="standard" levelIdx={4} />
+                  </div>
+                </div>
+                <div className="mt-auto pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[8px] font-black text-white/40 uppercase tracking-widest">Sector Logged</div>
+                    <div className="text-lg font-black italic text-[#22d3ee]">{standardMaxLevel + 1}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Mode 2: Timed Rush (Centerpiece) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0, rotateY: 0 }}
+            whileHover={{ z: 100, scale: 1.05 }}
+            transition={{ duration: 1.2, delay: 0.1, ease: "easeOut" }}
+            className="relative w-full md:w-[32%] aspect-[16/10] md:h-[70vh] group/mode cursor-pointer z-20 perspective-[1000px] preserve-3d"
+            onClick={() => { setGameMode('timed'); setCurrentScreen('timedConfig'); }}
+          >
+            <div className="absolute inset-0 bg-[#0f0f0f] border-2 border-white/10 rounded-[3rem] overflow-hidden shadow-[0_40px_100px_rgba(0,0,0,0.8)] transition-all group-hover/mode:border-amber-500/50 group-hover/mode:shadow-[0_0_80px_rgba(245,158,11,0.2)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,0.15)_0%,transparent_70%)] opacity-0 group-hover/mode:opacity-100 transition-opacity" />
+              <div className="relative h-full flex flex-col p-8 md:p-10">
+                <div className="mb-auto text-center">
+                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-amber-500 mb-2">Protocol 02 // Critical</div>
+                  <h2 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter text-white chromatic-title transition-all">Timed Rush</h2>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 3, repeat: Infinity }} className="relative">
+                    <div className="absolute inset-0 bg-amber-500 blur-3xl opacity-20" />
+                    <Clock size={64} className="text-amber-500 relative z-10" strokeWidth={1.5} />
+                  </motion.div>
+                </div>
+                <div className="mt-auto space-y-4 text-center">
+                  <div className="py-3 rounded-2xl border-2 border-amber-500/20 bg-amber-500/5 text-amber-500 text-[10px] font-black uppercase tracking-[0.4em]">
+                    Initiate Stream
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Mode 3: Invisible */}
+          <motion.div 
+            initial={{ opacity: 0, x: 50, rotateY: -30 }}
+            animate={{ opacity: 1, x: 0, rotateY: 10 }}
+            whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="relative w-full md:w-[30%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
+            onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
+          >
+            <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-purple-500/40 group-hover/mode:shadow-[0_0_60px_rgba(168,85,247,0.1)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(168,85,247,0.1)_0%,transparent_70%)]" />
+              <div className="relative h-full flex flex-col p-6 md:p-8">
+                <div className="mb-auto">
+                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-purple-400 mb-2 opacity-70">Protocol 03</div>
+                  <h2 className="text-2xl md:text-4xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Invisible</h2>
+                </div>
+                <div className="flex-1 flex items-center justify-center py-2">
+                  <div className="scale-[0.5] md:scale-75 group-hover/mode:scale-80 transition-transform duration-700 blur-[2px] group-hover/mode:blur-0">
+                    <MenuPreviewBoard mode="invisible" levelIdx={12} />
+                  </div>
+                </div>
+                <div className="mt-auto pt-4 border-t border-white/5 text-right">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[8px] font-black text-white/40 uppercase tracking-widest">Memory Sync</div>
+                    <div className="text-lg font-black italic text-purple-400">{invisibleMaxLevel + 1}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         </div>
 
-        <div className="absolute top-10 right-10 z-50 flex items-center gap-4">
-           <button 
-              onClick={() => setIsMuted(!isMuted)}
-              className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-none border border-white/10 text-slate-400 hover:text-white transition-all"
-            >
-              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
-        </div>
-
-        <div className="absolute bottom-6 right-10 z-50 opacity-20 text-[8px] font-black uppercase tracking-[0.5em] text-white">
-          System Core 4.3 // Stability Verified
-        </div>
 
         <AnimatePresence mode="wait">
           {currentScreen === 'timedConfig' && (
@@ -867,8 +826,8 @@ export default function App() {
                 </div>
 
                 <div className="w-full relative group">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-[#22d3ee]/20 to-[#a855f7]/20 blur-xl opacity-30 group-hover:opacity-60 transition-opacity" />
-                  <div className="relative glass-panel p-6 md:p-12 flex flex-col items-center gap-1 md:gap-2">
+                  <div className="absolute -inset-1 bg-gradient-to-r from-[#22d3ee]/20 to-[#a855f7]/20 blur-xl opacity-30 group-hover:opacity-60 transition-opacity rounded-[3rem]" />
+                  <div className="relative glass-panel p-6 md:p-12 flex flex-col items-center gap-1 md:gap-2 rounded-[3.5rem] border border-white/10">
                     <div className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">Stages Synchronized</div>
                     <div className="text-7xl md:text-[9rem] font-black leading-none text-white chromatic-title tabular-nums">
                       {timedScore.toString().padStart(2, '0')}
@@ -899,7 +858,7 @@ export default function App() {
                       setTimedTotalSeconds(totalSecs);
                       setCurrentScreen('game');
                     }}
-                    className="flex-1 py-3.5 md:py-4 bg-[#22d3ee] hover:bg-[#22d3ee]/80 text-black text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] shadow-[0_0_30px_rgba(34,211,238,0.15)] transition-all relative z-[110]"
+                    className="flex-1 py-4 md:py-5 bg-[#22d3ee] hover:bg-[#22d3ee]/80 text-black text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] shadow-[0_0_30px_rgba(34,211,238,0.15)] transition-all rounded-3xl relative z-[110]"
                   >
                     Relaunch Session
                   </button>
@@ -908,7 +867,7 @@ export default function App() {
                       e.stopPropagation();
                       setCurrentScreen('menu');
                     }}
-                    className="flex-1 py-3.5 md:py-4 bg-white/5 hover:bg-white/10 text-white text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] border border-white/10 transition-all relative z-[110]"
+                    className="flex-1 py-4 md:py-5 bg-white/5 hover:bg-white/10 text-white text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] border border-white/10 transition-all rounded-3xl relative z-[110]"
                   >
                     System Archive
                   </button>
@@ -949,13 +908,13 @@ export default function App() {
 
       {/* Header */}
       <nav 
-        className="h-20 lg:h-24 px-6 lg:px-10 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-40"
-        style={{ paddingTop: 'var(--safe-top)', height: 'calc(5rem + var(--safe-top))' }}
+        className="h-20 lg:h-24 px-6 lg:px-12 flex items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-40 rounded-b-[2rem]"
+        style={{ paddingTop: 'var(--safe-top)', height: 'calc(5.5rem + var(--safe-top))' }}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
           <button 
             onClick={() => setCurrentScreen('menu')}
-            className="p-2 text-[#94a3b8] hover:text-white transition-colors"
+            className="p-3 text-[#94a3b8] hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5"
             title="Return to Menu"
           >
             <ChevronLeft size={24} />
@@ -1054,17 +1013,17 @@ export default function App() {
           </div>
 
           {gameMode !== 'timed' && (
-            <div className="glass-panel rounded-[20px] p-6">
-              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold">Stage Archive</div>
+            <div className="glass-panel rounded-[2rem] p-8 border border-white/5 shadow-xl">
+              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-4 font-semibold">Stage Archive</div>
               <button 
                 onClick={() => setShowLevelSelector(true)}
-                className="w-full py-2.5 mb-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-[#22d3ee] transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 mb-6 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-[#22d3ee] transition-all flex items-center justify-center gap-2"
               >
                 <LayoutGrid size={14} />
-                Browse All
+                Browse Archive
               </button>
-              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-4 font-semibold opacity-50">Operational Log</div>
+              <div className="grid grid-cols-5 gap-2">
                 {Array.from({ length: 25 }).map((_, i) => {
                   const actualIdx = i + Math.max(0, currentLevelIdx - 10);
                   if (actualIdx >= LEVEL_METADATA.length) return null;
@@ -1073,7 +1032,7 @@ export default function App() {
                       key={actualIdx}
                       onClick={() => selectLevel(actualIdx)}
                       className={`
-                        aspect-square rounded-md flex items-center justify-center text-[10px] font-bold transition-all
+                        aspect-square rounded-xl flex items-center justify-center text-[10px] font-bold transition-all
                         ${currentLevelIdx === actualIdx 
                           ? 'bg-[#22d3ee]/20 border border-[#22d3ee] text-[#22d3ee]' 
                           : 'bg-slate-800/80 border border-white/5 text-[#94a3b8] hover:border-white/20 hover:text-white'}
@@ -1112,34 +1071,34 @@ export default function App() {
         />
 
         {/* Right Sidebar */ }
-        <aside className="flex flex-col gap-5 overflow-hidden">
-          <div className="glass-panel rounded-[20px] p-6 flex flex-col gap-5">
-            <div className="flex flex-col gap-3">
-              <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-widest px-1">Tactical Operations</h3>
+        <aside className="flex flex-col gap-6 overflow-hidden">
+          <div className="glass-panel rounded-[2rem] p-8 border border-white/5 shadow-xl flex flex-col gap-6">
+            <div className="flex flex-col gap-4">
+              <h3 className="text-[10px] font-black text-[#818cf8] uppercase tracking-[0.2em] px-1">Tactical Operations</h3>
               
               <button
                 onClick={handleReset}
-                className="w-full py-3.5 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.25)] flex items-center justify-center gap-2 hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all text-sm"
+                className="w-full py-4 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-black uppercase tracking-widest rounded-2xl shadow-[0_0_20px_rgba(34,211,238,0.2)] flex items-center justify-center gap-2 hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all text-[11px]"
               >
-                <RotateCcw size={18} />
-                Restart Mission
+                <RotateCcw size={16} />
+                Restart Session
               </button>
 
               <div className="flex gap-2">
                 <button
                   onClick={handleUndo}
                   disabled={history.length === 0}
-                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all disabled:opacity-20 disabled:grayscale"
+                  className="flex-1 py-3 bg-white/5 border border-white/10 text-white rounded-2xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all disabled:opacity-20 disabled:grayscale"
                 >
                   <Undo2 size={16} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Undo</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider">Undo</span>
                 </button>
                 <button
                   onClick={handleHint}
-                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all"
+                  className="flex-1 py-3 bg-white/5 border border-white/10 text-white rounded-2xl flex items-center justify-center gap-2 hover:bg-white/10 transition-all"
                 >
                   <Lightbulb size={16} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Hint</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider">Hint</span>
                 </button>
               </div>
             </div>
@@ -1349,7 +1308,7 @@ const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
 
   const specialtyIcon = () => {
     switch (arrow.type) {
-      case 'rotator': return <RotateCcw size={10} className="text-white/40" />;
+      case 'rotator': return <Settings size={10} className="text-white/40 animate-spin-slow" />;
       case 'shifter': return <Move size={10} className="text-white/40" />;
       case 'switch': return <div className="w-1.5 h-1.5 bg-pink-400 rounded-sm rotate-45 shadow-[0_0_8px_rgba(244,114,182,0.6)]" />;
       default: return null;
@@ -1429,7 +1388,7 @@ const GameBoard = React.memo(({
           onPointerMove={handlePointer}
           onPointerDown={handlePointer}
           onPointerLeave={handlePointerLeave}
-          className="relative bg-[#020617] border-2 border-white/20 rounded-[32px] p-4 shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
@@ -1628,7 +1587,7 @@ const GameBoard = React.memo(({
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-[#22d3ee]/20"
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-[3rem] border-2 border-[#22d3ee]/20"
             >
               <motion.div
                 animate={{ y: [0, -10, 0], scale: [1, 1.1, 1] }}
@@ -1660,7 +1619,7 @@ const GameBoard = React.memo(({
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-lg border-2 border-red-500/20"
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-[3rem] border-2 border-red-500/20"
             >
               <motion.div
                 animate={{ rotate: [0, -10, 10, 0] }}
