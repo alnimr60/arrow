@@ -381,7 +381,7 @@ export default function App() {
         clicks: prev 
       }]);
 
-      if (currentLevel.clickLimit && next >= currentLevel.clickLimit && removedIds.size + 1 < arrows.length) {
+      if (gameMode !== 'timed' && currentLevel.clickLimit && next >= currentLevel.clickLimit && removedIds.size + 1 < arrows.length) {
         setGameOverReason('clicks');
         setShowGameOver(true);
         if (!isMuted) soundService.playError();
@@ -506,17 +506,17 @@ export default function App() {
     if (!isMuted) soundService.playLevelStart();
 
     if (gameMode === 'timed') {
-      // Reset the WHOLE SESSION for Timed Rush
-      setTimedScore(0);
+      // Just regenerate the current board to fix a "stuck" state
+      // Keep timedScore and timeLeft as they are to maintain the challenge
+      setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
       setTimedLevelIdx(Math.floor(Math.random() * 1000000));
-      const totalSecs = timedDuration * 60;
-      setTimeLeft(totalSecs);
-      setTimedTotalSeconds(totalSecs);
+      setHistory([]);
+      setClickCount(0);
+      setRemovedIds(new Set());
+      setHintId(null);
       setShowVictory(false);
       setShowGameOver(false);
       setGameOverReason(null);
-      setClickCount(0);
-      setHistory([]);
       return;
     }
 
@@ -852,6 +852,7 @@ export default function App() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setTimedScore(0);
+                      setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
                       setTimedLevelIdx(Math.floor(Math.random() * 1000000));
                       const totalSecs = timedDuration * 60;
                       setTimeLeft(totalSecs);
@@ -869,7 +870,7 @@ export default function App() {
                     }}
                     className="flex-1 py-4 md:py-5 bg-white/5 hover:bg-white/10 text-white text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] border border-white/10 transition-all rounded-3xl relative z-[110]"
                   >
-                    System Archive
+                    Main Menu
                   </button>
                 </div>
               </motion.div>
@@ -930,10 +931,15 @@ export default function App() {
           )}
         </div>
         <div className="flex gap-4 lg:gap-8 items-center">
-          <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${gameMode === 'invisible' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'}`}>
-            {gameMode === 'invisible' ? <EyeOff size={16} /> : <Eye size={16} />}
-            <span className="hidden sm:inline">{gameMode === 'invisible' ? 'Invisible Mode' : 'Standard Mode'}</span>
-          </div>
+          {(() => {
+            const effectivelyInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
+            return (
+              <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${effectivelyInvisible ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'}`}>
+                {effectivelyInvisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                <span className="hidden sm:inline">{effectivelyInvisible ? 'Invisible Mode' : 'Standard Mode'}</span>
+              </div>
+            );
+          })()}
           <button 
             onClick={() => setIsMuted(prev => !prev)}
             className="p-2 text-[#94a3b8] hover:text-[#22d3ee] transition-colors"
@@ -1063,6 +1069,7 @@ export default function App() {
           gameOverReason={gameOverReason}
           currentLevelIdx={currentLevelIdx}
           gameMode={gameMode}
+          timedFlavor={timedFlavor}
           LEVEL_METADATA={LEVEL_METADATA}
           handleArrowClick={handleArrowClick}
           setHoveredArrowId={setHoveredArrowId}
@@ -1081,7 +1088,7 @@ export default function App() {
                 className="w-full py-4 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-black uppercase tracking-widest rounded-2xl shadow-[0_0_20px_rgba(34,211,238,0.2)] flex items-center justify-center gap-2 hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all text-[11px]"
               >
                 <RotateCcw size={16} />
-                Restart Session
+                {gameMode === 'timed' ? 'Reset Board' : 'Restart Session'}
               </button>
 
               <div className="flex gap-2">
@@ -1139,9 +1146,9 @@ export default function App() {
                     <Move size={12} strokeWidth={2.5} />
                     Clicks
                   </div>
-                  <div className={`text-2xl font-black tabular-nums transition-all ${currentLevel.clickLimit && clickCount >= currentLevel.clickLimit - 3 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                  <div className={`text-2xl font-black tabular-nums transition-all ${gameMode !== 'timed' && currentLevel.clickLimit && clickCount >= currentLevel.clickLimit - 3 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                     {clickCount.toString().padStart(2, '0')}
-                    {currentLevel.clickLimit && <span className="text-slate-700 text-xs ml-1 font-bold">/ {currentLevel.clickLimit.toString().padStart(2, '0')}</span>}
+                    {gameMode !== 'timed' && currentLevel.clickLimit && <span className="text-slate-700 text-xs ml-1 font-bold">/ {currentLevel.clickLimit.toString().padStart(2, '0')}</span>}
                   </div>
                 </div>
                 <div className="space-y-1 group/stat">
@@ -1352,6 +1359,7 @@ const GameBoard = React.memo(({
   gameOverReason, 
   currentLevelIdx, 
   gameMode,
+  timedFlavor,
   LEVEL_METADATA,
   handleArrowClick, 
   setHoveredArrowId,
@@ -1360,9 +1368,10 @@ const GameBoard = React.memo(({
 }: any) => {
   const [pointerPos, setPointerPos] = useState({ x: -1000, y: -1000 });
   const boardRef = useRef<HTMLDivElement>(null);
+  const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
 
   const handlePointer = (e: React.PointerEvent) => {
-    if (gameMode !== 'invisible' || !boardRef.current) return;
+    if (!isInvisible || !boardRef.current) return;
     const rect = boardRef.current.getBoundingClientRect();
     setPointerPos({
       x: e.clientX - rect.left,
@@ -1371,7 +1380,7 @@ const GameBoard = React.memo(({
   };
 
   const handlePointerLeave = () => {
-    if (gameMode === 'invisible') {
+    if (isInvisible) {
       setPointerPos({ x: -1000, y: -1000 });
     }
   };
@@ -1396,14 +1405,14 @@ const GameBoard = React.memo(({
             gap: '8px',
             width: 'min(90vw, 480px)',
             height: 'min(90vw, 480px)',
-            cursor: gameMode === 'invisible' ? 'none' : 'default'
+            cursor: isInvisible ? 'none' : 'default'
           }}
         >
           {/* Internal Board Ambient Glow */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] pointer-events-none z-0" />
 
           {/* Dark Overlay for Invisible Mode */}
-          {gameMode === 'invisible' && (
+          {isInvisible && (
             <div 
               className="absolute inset-0 z-20 pointer-events-none"
               style={{
