@@ -833,15 +833,61 @@ export default function App() {
                       {timedScore.toString().padStart(2, '0')}
                     </div>
                     <div className="w-full h-[1px] bg-white/5 my-2" />
-                    <div className="flex items-center gap-6">
-                      <div className="flex flex-col items-center">
-                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Duration</span>
-                        <span className="text-xs md:text-sm font-black text-[#22d3ee]">{timedDuration}M</span>
+                    
+                    {/* Inline Duration Selection */}
+                    <div className="w-full py-6 space-y-4">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-[#22d3ee]">Next Mission</div>
+                        <div className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-500">Select Active Window</div>
                       </div>
-                      <div className="w-[1px] h-3 bg-white/10" />
+                      
+                      <div className="grid grid-cols-3 gap-3">
+                        {[1, 3, 5].map(t => (
+                          <button 
+                            key={t}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTimedDuration(t as any);
+                              if (!isMuted) soundService.playClick();
+                            }}
+                            className={`
+                              group relative py-3 rounded-2xl border transition-all overflow-hidden
+                              ${timedDuration === t 
+                                ? 'border-[#22d3ee] bg-[#22d3ee]/10 text-white shadow-[0_0_20px_rgba(34,211,238,0.1)]' 
+                                : 'border-white/5 bg-white/5 text-slate-500 hover:border-white/20 hover:bg-white/10'}
+                            `}
+                          >
+                            {timedDuration === t && (
+                              <motion.div 
+                                layoutId="active-duration"
+                                className="absolute inset-0 bg-gradient-to-tr from-[#22d3ee]/10 to-transparent pointer-events-none"
+                              />
+                            )}
+                            <div className={`relative flex flex-col items-center transition-transform group-active:scale-95`}>
+                              <span className="text-xl md:text-2xl font-black italic tracking-tighter leading-none mb-0.5">{t}</span>
+                              <span className="text-[8px] font-black uppercase tracking-widest opacity-60">Minutes</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="w-full h-[1px] bg-white/5 my-1" />
+                    <div className="flex items-center gap-10 mt-2">
                       <div className="flex flex-col items-center">
-                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Efficiency</span>
-                        <span className="text-xs md:text-sm font-black text-[#a855f7]">{((timedScore / timedDuration) || 0).toFixed(1)}/m</span>
+                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">Duration</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-sm md:text-lg font-black text-[#22d3ee]">{(timedTotalSeconds / 60).toFixed(0)}</span>
+                          <span className="text-[8px] font-black text-[#22d3ee]/40 uppercase">Min</span>
+                        </div>
+                      </div>
+                      <div className="w-[1px] h-6 bg-white/10" />
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">Efficiency</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-sm md:text-lg font-black text-[#a855f7]">{(timedScore / (timedTotalSeconds / 60) || 0).toFixed(1)}</span>
+                          <span className="text-[8px] font-black text-[#a855f7]/40 uppercase">E/M</span>
+                        </div>
                       </div>
                     </div>
                   </div>
