@@ -99,6 +99,10 @@ class SoundService {
     this.createVoice(300, 'sine', 0.1, 0.05, 450);
   }
 
+  playPop() {
+    this.createVoice(1200, 'sine', 0.05, 0.1, 1500);
+  }
+
   playError() {
     this.createVoice(150, 'square', 0.2, 0.1, 80);
     this.createVoice(145, 'sawtooth', 0.2, 0.05, 75);
@@ -111,6 +115,16 @@ class SoundService {
     // Rising chromatic scale
     [440, 554.37, 659.25].forEach((f, i) => {
       this.createVoice(f, 'sine', 0.15, 0.05);
+    });
+  }
+
+  playLevelComplete() {
+    this.init();
+    if (!this.ctx || !this.masterGain) return;
+    [659.25, 830.61, 987.77].forEach((f, i) => {
+      setTimeout(() => {
+        this.createVoice(f, 'sine', 0.2, 0.08);
+      }, i * 50);
     });
   }
 

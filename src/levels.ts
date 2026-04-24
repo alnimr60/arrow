@@ -180,38 +180,41 @@ type GenerationStrategy = 'Critical Chain' | 'Dependency Web' | 'Sparse but Crit
 /**
  * Procedural Level Generator with Strategic Architectures
  */
-export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'invisible' = 'standard'): Level {
+export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'invisible' = 'standard', isRandomDifficulty: boolean = false): Level {
   // Unique seed per mode + level combination
   const seed = mode === 'standard' ? levelIdx + 7777 : levelIdx + 14000;
   const rng = new SeededRandom(seed);
 
+  // If random difficulty, pick a virtual levelIdx between 0 and 400 for variety
+  const virtualIdx = isRandomDifficulty ? Math.floor(rng.next() * 400) : levelIdx;
+
   // Grid scaling - Adjusted for mode and 300 levels
   let gridSize = 4;
   if (mode === 'standard') {
-    if (levelIdx > 15) gridSize = 5;
-    if (levelIdx > 50) gridSize = 6;
-    if (levelIdx > 120) gridSize = 7;
-    if (levelIdx > 220) gridSize = 8;
-    if (levelIdx > 351) gridSize = 9;
-    if (levelIdx > 480) gridSize = 10;
+    if (virtualIdx > 15) gridSize = 5;
+    if (virtualIdx > 50) gridSize = 6;
+    if (virtualIdx > 120) gridSize = 7;
+    if (virtualIdx > 220) gridSize = 8;
+    if (virtualIdx > 351) gridSize = 9;
+    if (virtualIdx > 480) gridSize = 10;
   } else {
     // Invisible mode starts small and stays manageable longer due to higher difficulty
-    if (levelIdx > 20) gridSize = 5;
-    if (levelIdx > 70) gridSize = 6;
-    if (levelIdx > 150) gridSize = 7;
-    if (levelIdx > 250) gridSize = 8;
+    if (virtualIdx > 20) gridSize = 5;
+    if (virtualIdx > 70) gridSize = 6;
+    if (virtualIdx > 150) gridSize = 7;
+    if (virtualIdx > 250) gridSize = 8;
   }
 
   // Strategy Selection
   const strategies: GenerationStrategy[] = ['Critical Chain', 'Dependency Web', 'Sparse but Critical', 'Clustered Challenge'];
-  const strategy = strategies[levelIdx % strategies.length];
+  const strategy = strategies[virtualIdx % strategies.length];
 
-  const isElite = (levelIdx + 1) % 5 === 0;
-  const isBlitz = (levelIdx + 1) % 7 === 0;
+  const isElite = (virtualIdx + 1) % 5 === 0;
+  const isBlitz = (virtualIdx + 1) % 7 === 0;
 
   // Density and target count
   const baseDensity = strategy === 'Sparse but Critical' ? 0.2 : 0.35;
-  const densityGrowth = Math.min(0.3, levelIdx * 0.002);
+  const densityGrowth = Math.min(0.3, virtualIdx * 0.002);
   const densityMultiplier = baseDensity + densityGrowth + (isElite ? 0.15 : 0);
   const targetCount = Math.floor(gridSize * gridSize * Math.min(0.8, densityMultiplier));
 
@@ -224,8 +227,8 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
 
     // Tiles (Gates)
     const gateChance = strategy === 'Sparse but Critical' ? 0.7 : (isElite ? 0.8 : 0.4);
-    if (levelIdx > 12 && rng.next() < gateChance) {
-      const tileCount = Math.min(6, Math.floor(levelIdx / 25) + 1);
+    if (virtualIdx > 12 && rng.next() < gateChance) {
+      const tileCount = Math.min(6, Math.floor(virtualIdx / 25) + 1);
       for (let j = 0; j < tileCount; j++) {
         const tx = Math.floor(rng.next() * gridSize);
         const ty = Math.floor(rng.next() * gridSize);
@@ -341,13 +344,13 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
         // Adjust type probabilities by strategy
         const typeRoll = rng.next();
         if (strategy === 'Sparse but Critical') {
-          if (levelIdx > 20 && typeRoll < 0.25) type = 'rotator';
-          else if (levelIdx > 30 && typeRoll < 0.4) type = 'shifter';
+          if (virtualIdx > 20 && typeRoll < 0.25) type = 'rotator';
+          else if (virtualIdx > 30 && typeRoll < 0.4) type = 'shifter';
         } else {
-          if (levelIdx > 8 && typeRoll < 0.15) type = 'rotator';
-          else if (levelIdx > 18 && typeRoll < 0.25) type = 'shifter';
-          else if (levelIdx > 35 && typeRoll < 0.3) type = 'locked';
-          else if (levelIdx > 50 && typeRoll < 0.35) type = 'switch';
+          if (virtualIdx > 8 && typeRoll < 0.15) type = 'rotator';
+          else if (virtualIdx > 18 && typeRoll < 0.25) type = 'shifter';
+          else if (virtualIdx > 35 && typeRoll < 0.3) type = 'locked';
+          else if (virtualIdx > 50 && typeRoll < 0.35) type = 'switch';
         }
 
         const newArrow: ArrowData = {
@@ -373,9 +376,9 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
     }
 
     // Dynamic Toolbox: Rare but powerful rotations/shifts
-    const toolbox: ToolboxConfig | undefined = levelIdx > 25 ? {
+    const toolbox: ToolboxConfig | undefined = virtualIdx > 25 ? {
       rotations: rng.next() < 0.3 ? 1 : 0,
-      shifts: levelIdx > 80 && rng.next() < 0.2 ? 1 : 0
+      shifts: virtualIdx > 80 && rng.next() < 0.2 ? 1 : 0
     } : undefined;
 
     const level: Level = {
@@ -391,7 +394,7 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
 
     if (isSolvable(level)) {
       // Final check: Don't return tiny levels for high indices
-      if (levelIdx > 10 && level.arrows.length < 5) continue;
+      if (virtualIdx > 10 && level.arrows.length < 5) continue;
       return level;
     }
   }

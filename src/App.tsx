@@ -30,7 +30,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { Direction, ArrowData, Level, TileData, ToolboxConfig } from './types';
-import { getLevel, getLevelMetadata } from './levels';
+import { getLevel, getLevelMetadata, generateProceduralLevel } from './levels';
 import { soundService } from './services/soundService';
 
 /**
@@ -126,8 +126,12 @@ const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', 
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<'menu' | 'game'>('menu');
-  const [gameMode, setGameMode] = useState<'standard' | 'invisible'>('standard');
+  const [currentScreen, setCurrentScreen] = useState<'menu' | 'game' | 'timedConfig' | 'timedResult'>('menu');
+  const [gameMode, setGameMode] = useState<'standard' | 'invisible' | 'timed'>('standard');
+  const [timedFlavor, setTimedFlavor] = useState<'standard' | 'invisible'>('standard');
+  const [timedDuration, setTimedDuration] = useState<1 | 3 | 5>(3);
+  const [timedScore, setTimedScore] = useState(0);
+  const [timedLevelIdx, setTimedLevelIdx] = useState(0);
 
   const [standardLevelIdx, setStandardLevelIdx] = useState(() => {
     const saved = localStorage.getItem('standard-level');
@@ -147,8 +151,8 @@ export default function App() {
     return saved ? parseInt(saved) : 0;
   });
 
-  const currentLevelIdx = gameMode === 'standard' ? standardLevelIdx : invisibleLevelIdx;
-  const maxReachedLevel = gameMode === 'standard' ? standardMaxLevel : invisibleMaxLevel;
+  const currentLevelIdx = gameMode === 'timed' ? timedLevelIdx : (gameMode === 'standard' ? standardLevelIdx : invisibleLevelIdx);
+  const maxReachedLevel = gameMode === 'standard' ? standardMaxLevel : (gameMode === 'invisible' ? invisibleMaxLevel : 0);
   const setCurrentLevelIdx = (valOrFn: number | ((prev: number) => number)) => {
     if (gameMode === 'standard') {
       setStandardLevelIdx(valOrFn);
@@ -186,6 +190,7 @@ export default function App() {
   const [gameOverReason, setGameOverReason] = useState<'clicks' | 'time' | null>(null);
   const [clickCount, setClickCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timedTotalSeconds, setTimedTotalSeconds] = useState(0);
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const activeLevelRef = useRef<HTMLButtonElement>(null);
   const [isMuted, setIsMuted] = useState(() => {
@@ -193,14 +198,21 @@ export default function App() {
     return saved === 'true';
   });
   
-  const currentLevel = useMemo(() => getLevel(currentLevelIdx, gameMode), [currentLevelIdx, gameMode]);
+  const lastClickTimeRef = useRef(0);
+  
+  const currentLevel = useMemo(() => {
+    if (gameMode === 'timed') {
+      return generateProceduralLevel(timedLevelIdx, timedFlavor, true);
+    }
+    return getLevel(currentLevelIdx, gameMode);
+  }, [currentLevelIdx, gameMode, timedLevelIdx, timedFlavor]);
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
   }, [isMuted]);
 
   useEffect(() => {
-    if (currentLevelIdx > maxReachedLevel) {
+    if (currentLevelIdx > maxReachedLevel && gameMode !== 'timed') {
       setMaxReachedLevel(currentLevelIdx);
     }
   }, [currentLevelIdx, maxReachedLevel]);
@@ -216,17 +228,22 @@ export default function App() {
         
         if (next <= 0 && !showVictory) {
           clearInterval(timer);
-          setGameOverReason('time');
-          setShowGameOver(true);
-          if (!isMuted) soundService.playError();
+          if (gameMode === 'timed') {
+            setCurrentScreen('timedResult');
+            if (!isMuted) soundService.playSuccess(); // End of game sound
+          } else {
+            setGameOverReason('time');
+            setShowGameOver(true);
+            if (!isMuted) soundService.playError();
+          }
           return 0;
         }
         return next;
       });
-    }, 200); // Reduced frequency for performance
+    }, 100); 
 
     return () => clearInterval(timer);
-  }, [showVictory, showGameOver, isMuted, timeLeft === null]);
+  }, [showVictory, showGameOver, isMuted, timeLeft === null, gameMode]);
 
   // Initial Level
   useEffect(() => {
@@ -240,10 +257,20 @@ export default function App() {
     setShowGameOver(false);
     setGameOverReason(null);
     setClickCount(0);
-    setTimeLeft(currentLevel.timeLimit || null);
+    
+    if (gameMode === 'timed') {
+      if (timeLeft === null) {
+        const totalSecs = timedDuration * 60;
+        setTimeLeft(totalSecs);
+        setTimedTotalSeconds(totalSecs);
+      }
+    } else {
+      setTimeLeft(currentLevel.timeLimit || null);
+    }
+    
     if (!isMuted) soundService.playLevelStart();
     localStorage.setItem('arrow-escape-level', currentLevelIdx.toString());
-  }, [currentLevelIdx, currentLevel]);
+  }, [currentLevelIdx, currentLevel, gameMode, timedDuration, isMuted]);
 
   const hasKeys = useMemo(() => {
     return arrows.some(a => !removedIds.has(a.id) && a.type === 'key');
@@ -294,114 +321,122 @@ export default function App() {
   };
 
   const handleArrowClick = useCallback((arrow: ArrowData) => {
-    // We use functional updates or capture current state via closure if we're sure re-renders are fast.
-    // To be ultra-safe for speedruns, we checks against the latest state.
-    
-    setRemovedIds(currentRemoved => {
-      if (currentRemoved.has(arrow.id) || showVictory || showGameOver) return currentRemoved;
+    const now = Date.now();
+    if (now - lastClickTimeRef.current < 250) return;
+    lastClickTimeRef.current = now;
 
-      // Check blockers with the MOST RECENT removed set
-      if (isBlocked(arrow, arrows, currentRemoved, tiles)) {
-        if (!isMuted) soundService.playError();
-        setShakeId(arrow.id);
-        setTimeout(() => setShakeId(null), 500);
-        
-        setClickCount(prev => {
-          const next = prev + 1;
-          if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
-            setGameOverReason('clicks');
-            setShowGameOver(true);
-            if (!isMuted) soundService.playError();
-          }
-          return next;
-        });
-        return currentRemoved;
-      }
+    if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
 
-      // If NOT blocked, proceed with removal
-      if (!isMuted) {
-        soundService.playLaunch();
-        soundService.playRemove(arrow.dir);
-        if (arrow.type === 'switch') soundService.playSwitch();
-        if (arrow.type === 'rotator') soundService.playRotate();
-        if (arrow.type === 'shifter') soundService.playShift();
-      }
+    const blocked = isBlocked(arrow, arrows, removedIds, tiles);
 
+    if (blocked) {
+      if (!isMuted) soundService.playError();
+      setShakeId(arrow.id);
+      setTimeout(() => setShakeId(null), 500);
+      
       setClickCount(prev => {
         const next = prev + 1;
-        
-        // Save history - careful with async state here
-        setHistory(h => [...h, { 
-          arrows: [...arrows], 
-          removedIds: new Set(currentRemoved), 
-          tiles: [...tiles], 
-          toolbox: { ...toolbox }, 
-          clicks: prev 
-        }]);
-
-        const nextRemoved = new Set(currentRemoved);
-        nextRemoved.add(arrow.id);
-
-        // Victory check
-        if (nextRemoved.size === arrows.length) {
-          setTimeout(() => {
-            if (!isMuted) soundService.playSuccess();
-            setShowVictory(true);
-          }, 200);
-        } else if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
+        if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
           setGameOverReason('clicks');
           setShowGameOver(true);
           if (!isMuted) soundService.playError();
         }
-
         return next;
       });
+      return;
+    }
 
-      // Handle special effects
-      if (arrow.type === 'switch') {
-        setTiles(prev => prev.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t)));
+    // NOT BLOCKED
+    if (!isMuted) {
+      soundService.playLaunch();
+      soundService.playRemove(arrow.dir);
+      if (arrow.type === 'switch') soundService.playSwitch();
+      if (arrow.type === 'rotator') soundService.playRotate();
+      if (arrow.type === 'shifter') soundService.playShift();
+    }
+
+    setClickCount(prev => {
+      const next = prev + 1;
+      
+      // Save history
+      setHistory(h => [...h, { 
+        arrows: [...arrows], 
+        removedIds: new Set(removedIds), 
+        tiles: [...tiles], 
+        toolbox: { ...toolbox }, 
+        clicks: prev 
+      }]);
+
+      if (currentLevel.clickLimit && next >= currentLevel.clickLimit && removedIds.size + 1 < arrows.length) {
+        setGameOverReason('clicks');
+        setShowGameOver(true);
+        if (!isMuted) soundService.playError();
       }
-
-      if (arrow.type === 'rotator') {
-        setArrows(prev => prev.map(a => {
-          const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
-          if (isNeighbor && !currentRemoved.has(a.id) && a.id !== arrow.id) {
-            return { ...a, dir: rotateDir(a.dir) };
-          }
-          return a;
-        }));
-      }
-
-      if (arrow.type === 'shifter') {
-        // Shifter logic also needs the latest arrows, it's safer to do this in a follow-up useEffect or capture
-        // For simplicity and speed in this specific game, we follow through here.
-        setArrows(prev => {
-           // ... (shifting logic remains similar but uses locally fresh state if possible)
-           return prev.map(a => {
-             if (currentRemoved.has(a.id) || a.id === arrow.id) return a;
-             const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
-             const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
-             if (isSameCol || isSameRow) {
-               let nx = a.x, ny = a.y;
-               if (arrow.dir === 'up') ny--; if (arrow.dir === 'down') ny++;
-               if (arrow.dir === 'left') nx--; if (arrow.dir === 'right') nx++;
-               if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
-               const isOccupied = prev.some(other => (!currentRemoved.has(other.id) && other.id !== arrow.id) && other.x === nx && other.y === ny) ||
-                                tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
-               if (!isOccupied) return { ...a, x: nx, y: ny };
-             }
-             return a;
-           });
-        });
-      }
-
-      const updatedRemoved = new Set(currentRemoved);
-      updatedRemoved.add(arrow.id);
-      return updatedRemoved;
+      return next;
     });
 
+    setRemovedIds(prev => {
+      const next = new Set(prev);
+      next.add(arrow.id);
+
+      // Victory check
+      if (next.size === arrows.length) {
+        if (gameMode === 'timed') {
+          setTimedScore(s => s + 1);
+          if (!isMuted) soundService.playLevelComplete();
+          setTimeout(() => {
+            setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
+            setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+            setArrows([]);
+            setRemovedIds(new Set());
+          }, 300);
+        } else {
+          setTimeout(() => {
+            if (!isMuted) soundService.playSuccess();
+            setShowVictory(true);
+          }, 200);
+        }
+      }
+      return next;
+    });
+
+    // Handle special effects
+    if (arrow.type === 'switch') {
+      setTiles(prev => prev.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t)));
+    }
+
+    if (arrow.type === 'rotator') {
+      setArrows(prev => prev.map(a => {
+        const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
+        if (isNeighbor && !removedIds.has(a.id) && a.id !== arrow.id) {
+          return { ...a, dir: rotateDir(a.dir) };
+        }
+        return a;
+      }));
+    }
+
+    if (arrow.type === 'shifter') {
+      setArrows(prev => {
+         return prev.map(a => {
+           if (removedIds.has(a.id) || a.id === arrow.id) return a;
+           const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
+           const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
+           if (isSameCol || isSameRow) {
+             let nx = a.x, ny = a.y;
+             if (arrow.dir === 'up') ny--; if (arrow.dir === 'down') ny++;
+             if (arrow.dir === 'left') nx--; if (arrow.dir === 'right') nx++;
+             if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
+             const isOccupied = prev.some(other => (!removedIds.has(other.id) && other.id !== arrow.id) && other.x === nx && other.y === ny) ||
+                              tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+             if (!isOccupied) return { ...a, x: nx, y: ny };
+           }
+           return a;
+         });
+      });
+    }
+
     setHintId(null);
-  }, [arrows, isBlocked, isMuted, currentLevel, tiles, toolbox, showVictory, showGameOver]);
+  }, [arrows, isBlocked, isMuted, currentLevel, tiles, toolbox, showVictory, showGameOver, removedIds, gameMode]);
 
   const useTool = (type: 'rotate' | 'shift', targetArrowId: string) => {
     if (!isMuted) soundService.playClick();
@@ -444,6 +479,22 @@ export default function App() {
 
   const handleReset = () => {
     if (!isMuted) soundService.playLevelStart();
+
+    if (gameMode === 'timed') {
+      // Reset the WHOLE SESSION for Timed Rush
+      setTimedScore(0);
+      setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+      const totalSecs = timedDuration * 60;
+      setTimeLeft(totalSecs);
+      setTimedTotalSeconds(totalSecs);
+      setShowVictory(false);
+      setShowGameOver(false);
+      setGameOverReason(null);
+      setClickCount(0);
+      setHistory([]);
+      return;
+    }
+
     setArrows(currentLevel.arrows);
     setTiles(currentLevel.tiles || []);
     setToolbox(currentLevel.toolbox || { rotations: 0, shifts: 0 });
@@ -497,125 +548,181 @@ export default function App() {
     return arrow;
   }, [hoveredArrowId, arrows, removedIds, tiles, isBlocked, activeTool]);
 
-  if (currentScreen === 'menu') {
+  if (currentScreen === 'menu' || currentScreen === 'timedConfig' || currentScreen === 'timedResult') {
     return (
-      <div className="min-h-screen bg-[#000000] text-white flex flex-col md:flex-row overflow-hidden font-sans selection:bg-cyan-500/30">
-        <div className="noise-overlay" />
+      <div className="min-h-screen bg-[#000000] text-white flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-cyan-500/30">
+        {/* Removed noise-overlay and scanlines from menu */}
         
-        {/* Cinematic Scanline */}
-        <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[9998] overflow-hidden">
-          <div className="w-full h-[2px] bg-white animate-scanline" />
+        <div className="flex flex-col md:flex-row w-full h-full">
+          {/* Left Side: Standard Mode */}
+          <motion.button 
+            initial={{ x: -20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 1.2, ease: "circOut" }}
+            onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
+            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10"
+          >
+            {/* Post-processing shader vignette */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] z-[5]" />
+            
+            {/* Background Ambient Glow */}
+            <div className="absolute inset-0 bg-cyan-950/[0.08] group-hover:bg-cyan-900/[0.15] transition-colors duration-1000" />
+            
+            {/* Content Wrapper */}
+            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
+              <div className="relative">
+                <motion.div 
+                  whileHover={{ rotate: 90 }}
+                  className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
+                >
+                  <LayoutGrid size={40} strokeWidth={1} />
+                </motion.div>
+                {/* Technical Brackets */}
+                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
+                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
+              </div>
+              
+              <div className="space-y-3">
+                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Standard</h2>
+                <div className="h-[1px] w-12 bg-cyan-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
+                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
+                  The Logic Engine <br />
+                  Tactical untangling in 600 stages
+                </p>
+              </div>
+
+              {/* Realistic Game Preview */}
+              <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none scale-75">
+                <MenuPreviewBoard mode="standard" levelIdx={4} />
+              </div>
+
+              <div className="pt-6">
+                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all relative">
+                  <div className="absolute top-0 left-0 w-1 h-1 bg-cyan-500" />
+                  <Trophy size={12} className="opacity-60" />
+                  <span>Sector {standardMaxLevel + 1} Logged</span>
+                </div>
+              </div>
+            </div>
+
+            {/* High Contrast Hover Glow */}
+            <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+          </motion.button>
+
+          {/* Middle Side: Timed Rush */}
+          <motion.button 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 1.2, delay: 0.1, ease: "circOut" }}
+            onClick={() => { setGameMode('timed'); setCurrentScreen('timedConfig'); }}
+            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10 bg-[#050505]"
+          >
+            {/* Post-processing shader vignette */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.5)_100%)] z-[5]" />
+            
+            {/* Background Ambient Glow */}
+            <div className="absolute inset-0 bg-amber-950/[0.08] group-hover:bg-amber-900/[0.15] transition-colors duration-1000" />
+            
+            {/* Content Wrapper */}
+            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
+              <div className="relative">
+                <motion.div 
+                  animate={{ rotate: [0, 360] }}
+                  transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                  className="text-amber-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
+                >
+                  <Clock size={40} strokeWidth={1} />
+                </motion.div>
+                {/* Technical Brackets */}
+                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l border-amber-500/50" />
+                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r border-amber-500/50" />
+              </div>
+              
+              <div className="space-y-3">
+                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Timed Rush</h2>
+                <div className="h-[1px] w-12 bg-amber-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
+                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
+                  System Overload <br />
+                  Infinite generation vs clock
+                </p>
+              </div>
+
+              <motion.div 
+                className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 bg-amber-500/10 p-12 rounded-full border border-amber-500/20 blur-sm group-hover:blur-none"
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <RefreshCw size={48} className="text-amber-500/20" />
+              </motion.div>
+
+              <div className="pt-6">
+                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-amber-500/50 group-hover:text-amber-400 transition-all relative">
+                  <div className="absolute top-0 left-0 w-1 h-1 bg-amber-500" />
+                  <Clock size={12} className="opacity-60" />
+                  <span>Infinite Stream Ready</span>
+                </div>
+              </div>
+            </div>
+
+            {/* High Contrast Hover Glow */}
+            <div className="absolute inset-0 bg-gradient-to-t from-amber-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+          </motion.button>
+
+          {/* Right Side: Invisible Mode */}
+          <motion.button 
+            initial={{ x: 20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 1.2, ease: "circOut" }}
+            onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
+            className="relative w-full md:w-1/3 h-[33.3vh] md:h-screen group flex flex-col items-center justify-center bg-[#000000] overflow-hidden transition-all duration-700 hover:z-10"
+          >
+            {/* Post-processing shader vignette */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)] z-[5]" />
+            
+            {/* Background Ambient Glow */}
+            <div className="absolute inset-0 bg-purple-950/[0.08] group-hover:bg-purple-900/[0.15] transition-colors duration-1000" />
+            
+            {/* Content Wrapper */}
+            <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
+              <div className="relative">
+                <motion.div 
+                  whileHover={{ scale: 1.2 }}
+                  className="text-purple-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
+                >
+                  <EyeOff size={40} strokeWidth={1} />
+                </motion.div>
+                {/* Technical Brackets */}
+                <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
+                <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
+              </div>
+              
+              <div className="space-y-3">
+                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Invisible</h2>
+                <div className="h-[1px] w-12 bg-purple-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
+                <p className="text-slate-500 text-[10px] md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
+                  The Memory Void <br />
+                  Subliminal navigation in 300 stages
+                </p>
+              </div>
+
+              {/* Realistic Game Preview */}
+              <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none scale-75">
+                <MenuPreviewBoard mode="invisible" levelIdx={12} />
+              </div>
+
+              <div className="pt-6">
+                <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all relative">
+                  <div className="absolute top-0 left-0 w-1 h-1 bg-purple-500" />
+                  <Clock size={12} className="opacity-60" />
+                  <span>Core {invisibleMaxLevel + 1} Synchronized</span>
+                </div>
+              </div>
+            </div>
+
+            {/* High Contrast Hover Glow */}
+            <div className="absolute inset-0 bg-gradient-to-t from-purple-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+          </motion.button>
         </div>
-
-        {/* Left Side: Standard Mode */}
-        <motion.button 
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 1.2, ease: "circOut" }}
-          onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
-          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-white/5 overflow-hidden transition-all duration-700 hover:z-10"
-        >
-          {/* Post-processing shader vignette */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] z-[5]" />
-          
-          {/* Background Ambient Glow */}
-          <div className="absolute inset-0 bg-cyan-950/[0.08] group-hover:bg-cyan-900/[0.15] transition-colors duration-1000" />
-          
-          {/* Content Wrapper */}
-          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
-            <div className="relative">
-              <motion.div 
-                whileHover={{ rotate: 90 }}
-                className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
-              >
-                <LayoutGrid size={40} strokeWidth={1} />
-              </motion.div>
-              {/* Technical Brackets */}
-              <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
-              <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
-            </div>
-            
-            <div className="space-y-3">
-              <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Standard</h2>
-              <div className="h-[1px] w-12 bg-cyan-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
-              <p className="text-slate-500 text-xs md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
-                The Logic Engine <br />
-                Tactical untangling in 600 stages
-              </p>
-            </div>
-
-            {/* Realistic Game Preview */}
-            <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none">
-              <MenuPreviewBoard mode="standard" levelIdx={4} />
-            </div>
-
-            <div className="pt-6">
-               <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-cyan-500/50 group-hover:text-cyan-400 transition-all relative">
-                 <div className="absolute top-0 left-0 w-1 h-1 bg-cyan-500" />
-                 <Trophy size={12} className="opacity-60" />
-                 <span>Sector {standardMaxLevel + 1} Logged</span>
-               </div>
-            </div>
-          </div>
-
-          {/* High Contrast Hover Glow */}
-          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-        </motion.button>
-
-        {/* Right Side: Invisible Mode */}
-        <motion.button 
-          initial={{ x: 20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 1.2, ease: "circOut" }}
-          onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
-          className="relative w-full md:w-1/2 h-1/2 md:h-screen group flex flex-col items-center justify-center bg-[#000000] overflow-hidden transition-all duration-700"
-        >
-          {/* Post-processing shader vignette */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)] z-[5]" />
-          
-          {/* Background Ambient Glow */}
-          <div className="absolute inset-0 bg-purple-950/[0.08] group-hover:bg-purple-900/[0.15] transition-colors duration-1000" />
-          
-          {/* Content Wrapper */}
-          <div className="relative z-10 flex flex-col items-center text-center px-8 space-y-8">
-            <div className="relative">
-              <motion.div 
-                whileHover={{ scale: 1.2 }}
-                className="text-purple-400 opacity-60 group-hover:opacity-100 transition-all duration-500"
-              >
-                <EyeOff size={40} strokeWidth={1} />
-              </motion.div>
-              {/* Technical Brackets */}
-              <div className="panel-corner top-[-10px] left-[-10px] border-t border-l" />
-              <div className="panel-corner bottom-[-10px] right-[-10px] border-b border-r" />
-            </div>
-            
-            <div className="space-y-3">
-              <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter text-white/90 group-hover:text-white transition-all duration-700 chromatic-title uppercase">Invisible</h2>
-              <div className="h-[1px] w-12 bg-purple-500/40 mx-auto group-hover:w-32 transition-all duration-700" />
-              <p className="text-slate-500 text-xs md:text-sm font-medium max-w-[280px] mx-auto uppercase tracking-widest leading-loose opacity-60 group-hover:opacity-100 group-hover:text-slate-300 transition-all">
-                The Memory Void <br />
-                Subliminal navigation in 300 stages
-              </p>
-            </div>
-
-            {/* Realistic Game Preview */}
-            <div className="mt-8 relative group-hover:scale-110 transition-transform duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] pointer-events-none">
-              <MenuPreviewBoard mode="invisible" levelIdx={12} />
-            </div>
-
-            <div className="pt-6">
-               <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/[0.02] rounded-none border border-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:border-purple-500/50 group-hover:text-purple-400 transition-all relative">
-                 <div className="absolute top-0 left-0 w-1 h-1 bg-purple-500" />
-                 <Clock size={12} className="opacity-60" />
-                 <span>Core {invisibleMaxLevel + 1} Synchronized</span>
-               </div>
-            </div>
-          </div>
-
-          {/* High Contrast Hover Glow */}
-          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-        </motion.button>
 
         {/* Global UI Overlays */}
         <div className="absolute top-10 left-10 z-50 pointer-events-auto hidden md:block">
@@ -641,15 +748,183 @@ export default function App() {
         </div>
 
         <div className="absolute bottom-6 right-10 z-50 opacity-20 text-[8px] font-black uppercase tracking-[0.5em] text-white">
-          System Core 4.2 // Stability Verified
+          System Core 4.3 // Stability Verified
         </div>
+
+        <AnimatePresence mode="wait">
+          {currentScreen === 'timedConfig' && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-3xl flex items-center justify-center p-6"
+            >
+              <div className="absolute inset-0 bg-[#22d3ee]/5 pointer-events-none" />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="w-full max-w-xl glass-panel p-10 relative overflow-hidden"
+              >
+                {/* Decorative Accents */}
+                <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-[#22d3ee]" />
+                <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-[#22d3ee]" />
+                <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-[#22d3ee]" />
+                <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-[#22d3ee]" />
+
+                <div className="flex flex-col items-center text-center space-y-8 relative z-10">
+                  <div className="space-y-1">
+                    <h2 className="text-5xl font-black italic uppercase tracking-tighter chromatic-title text-white">Timed Rush</h2>
+                    <p className="text-[#22d3ee] text-[10px] font-black uppercase tracking-[0.5em] opacity-80">Protocol Initialization</p>
+                  </div>
+
+                  <div className="w-full h-[1px] bg-white/10" />
+
+                  {/* Mixed Mode Notice */}
+                  <div className="w-full p-6 bg-white/5 border border-white/10 flex items-center gap-6 text-left group hover:border-[#22d3ee]/30 transition-all">
+                    <div className="p-3 bg-[#22d3ee]/10 rounded-lg">
+                      <RefreshCw size={24} className="text-[#22d3ee] animate-spin-slow" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Mixed Reality Active</span>
+                      <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest leading-relaxed">
+                        Standard & Invisible modes will alternate randomly every stage.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Duration Selection */}
+                  <div className="w-full space-y-4">
+                    <div className="text-[9px] font-black uppercase tracking-[0.3em] text-[#94a3b8] text-left ml-1">Engagement Duration</div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[1, 3, 5].map(t => (
+                        <button 
+                          key={t}
+                          onClick={() => setTimedDuration(t as any)}
+                          className={`
+                            group relative py-5 border transition-all 
+                            ${timedDuration === t 
+                              ? 'border-[#22d3ee] bg-[#22d3ee]/10 text-white' 
+                              : 'border-white/10 bg-white/5 text-slate-500 hover:border-white/30 hover:bg-white/10'}
+                          `}
+                        >
+                          <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 bg-[#22d3ee] rounded-full scale-0 transition-transform ${timedDuration === t ? 'scale-100' : ''}`} />
+                          <div className="text-2xl font-black italic tracking-tighter">{t}M</div>
+                          <div className="text-[8px] font-black uppercase tracking-widest opacity-60">Session</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 w-full pt-4">
+                    <button 
+                      onClick={() => setCurrentScreen('menu')}
+                      className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-white/40 border border-white/10 transition-all"
+                    >
+                      Return
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const totalSecs = timedDuration * 60;
+                        setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
+                        setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+                        setTimedScore(0);
+                        setTimeLeft(totalSecs); // Set immediately for robust reactivity
+                        setTimedTotalSeconds(totalSecs);
+                        setCurrentScreen('game');
+                      }}
+                      className="flex-[2] py-4 bg-[#22d3ee] hover:bg-[#22d3ee]/80 text-black text-[12px] font-black uppercase tracking-[0.4em] transition-all shadow-[0_0_40px_rgba(34,211,238,0.2)]"
+                    >
+                      Launch Stream
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence mode="wait">
+          {currentScreen === 'timedResult' && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-[#000000]/80 backdrop-blur-3xl flex items-center justify-center p-6 overflow-hidden pointer-events-auto"
+            >
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#22d3ee]/5 to-transparent pointer-events-none" />
+              
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center space-y-4 md:space-y-8 w-full max-w-xl relative z-10 px-4"
+              >
+                <div className="text-center space-y-1">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full">
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-[7px] font-black uppercase tracking-[0.4em] text-red-500">Operation Terminated</span>
+                  </div>
+                  <h2 className="text-4xl md:text-7xl font-black italic uppercase tracking-tighter chromatic-title text-white">Performance Log</h2>
+                </div>
+
+                <div className="w-full relative group">
+                  <div className="absolute -inset-1 bg-gradient-to-r from-[#22d3ee]/20 to-[#a855f7]/20 blur-xl opacity-30 group-hover:opacity-60 transition-opacity" />
+                  <div className="relative glass-panel p-6 md:p-12 flex flex-col items-center gap-1 md:gap-2">
+                    <div className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">Stages Synchronized</div>
+                    <div className="text-7xl md:text-[9rem] font-black leading-none text-white chromatic-title tabular-nums">
+                      {timedScore.toString().padStart(2, '0')}
+                    </div>
+                    <div className="w-full h-[1px] bg-white/5 my-2" />
+                    <div className="flex items-center gap-6">
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Duration</span>
+                        <span className="text-xs md:text-sm font-black text-[#22d3ee]">{timedDuration}M</span>
+                      </div>
+                      <div className="w-[1px] h-3 bg-white/10" />
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Efficiency</span>
+                        <span className="text-xs md:text-sm font-black text-[#a855f7]">{((timedScore / timedDuration) || 0).toFixed(1)}/m</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTimedScore(0);
+                      setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+                      const totalSecs = timedDuration * 60;
+                      setTimeLeft(totalSecs);
+                      setTimedTotalSeconds(totalSecs);
+                      setCurrentScreen('game');
+                    }}
+                    className="flex-1 py-3.5 md:py-4 bg-[#22d3ee] hover:bg-[#22d3ee]/80 text-black text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] shadow-[0_0_30px_rgba(34,211,238,0.15)] transition-all relative z-[110]"
+                  >
+                    Relaunch Session
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentScreen('menu');
+                    }}
+                    className="flex-1 py-3.5 md:py-4 bg-white/5 hover:bg-white/10 text-white text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] border border-white/10 transition-all relative z-[110]"
+                  >
+                    System Archive
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#000000] text-[#f8fafc] font-sans flex flex-col relative overflow-hidden">
-      <div className="noise-overlay" />
+      {/* Noise overlay removed for game screen */}
       
       {/* Cinematic Background Shaders */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -660,6 +935,17 @@ export default function App() {
           gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_80%_80%,#1e1b4b_0%,transparent_50%)]' : 'bg-[radial-gradient(circle_at_80%_80%,#4c1d95_0%,transparent_50%)]'
         }`} />
       </div>
+
+      {/* Timer Bar for Timed Mode */}
+      {gameMode === 'timed' && timeLeft !== null && (
+        <div className="fixed top-0 left-0 w-full h-1 z-[100] bg-white/5 overflow-hidden">
+          <motion.div 
+            className="h-full bg-gradient-to-r from-amber-500 to-orange-600"
+            animate={{ width: `${(timeLeft / timedTotalSeconds) * 100}%` }}
+            transition={{ ease: "linear", duration: 0.2 }}
+          />
+        </div>
+      )}
 
       {/* Header */}
       <nav 
@@ -674,13 +960,15 @@ export default function App() {
           >
             <ChevronLeft size={24} />
           </button>
-          <button 
-            onClick={() => setShowLevelSelector(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[#22d3ee] transition-all border border-white/5 hover:border-[#22d3ee]/30 group"
-          >
-            <LayoutGrid size={20} className="group-hover:rotate-90 transition-transform duration-300" />
-            <span className="text-sm font-bold uppercase tracking-wider hidden md:block">Stages</span>
-          </button>
+          {gameMode !== 'timed' && (
+            <button 
+              onClick={() => setShowLevelSelector(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[#22d3ee] transition-all border border-white/5 hover:border-[#22d3ee]/30 group"
+            >
+              <LayoutGrid size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+              <span className="text-sm font-bold uppercase tracking-wider hidden md:block">Stages</span>
+            </button>
+          )}
         </div>
         <div className="flex gap-4 lg:gap-8 items-center">
           <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${gameMode === 'invisible' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'}`}>
@@ -694,7 +982,7 @@ export default function App() {
           >
             {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
           </button>
-          <StatItem label="Stage" value={currentLevelIdx + 1} />
+          <StatItem label={gameMode === 'timed' ? "Score" : "Stage"} value={gameMode === 'timed' ? timedScore : currentLevelIdx + 1} />
         </div>
       </nav>
 
@@ -702,10 +990,19 @@ export default function App() {
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full">
         {/* Left Sidebar */}
         <aside className="hidden lg:flex flex-col gap-5">
+          {gameMode === 'timed' && (
+             <div className="glass-panel rounded-[20px] p-6 border-amber-500/30">
+                <div className="text-[10px] font-black text-amber-500 uppercase tracking-[0.4em] mb-2">Timed Session</div>
+                <div className="text-5xl font-black italic text-white flex items-baseline gap-2">
+                   {timedScore}
+                   <span className="text-xs uppercase tracking-tighter text-slate-500 not-italic">Stages</span>
+                </div>
+             </div>
+          )}
           <div className="glass-panel rounded-[20px] p-6">
             <div className="flex items-center justify-between mb-4">
               <span className="inline-block px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-xs font-bold uppercase tracking-wider">
-                Stage {currentLevelIdx + 1}
+                {gameMode === 'timed' ? 'PROCEDURAL' : `Stage ${currentLevelIdx + 1}`}
               </span>
               {currentLevel.strategy && (
                 <span className="text-[10px] font-black text-[#818cf8] uppercase tracking-tighter opacity-80">
@@ -756,37 +1053,39 @@ export default function App() {
             </div>
           </div>
 
-          <div className="glass-panel rounded-[20px] p-6">
-            <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold">Stage Archive</div>
-            <button 
-              onClick={() => setShowLevelSelector(true)}
-              className="w-full py-2.5 mb-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-[#22d3ee] transition-all flex items-center justify-center gap-2"
-            >
-              <LayoutGrid size={14} />
-              Browse All
-            </button>
-            <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {Array.from({ length: 25 }).map((_, i) => {
-                const actualIdx = i + Math.max(0, currentLevelIdx - 10);
-                if (actualIdx >= LEVEL_METADATA.length) return null;
-                return (
-                  <button
-                    key={actualIdx}
-                    onClick={() => selectLevel(actualIdx)}
-                    className={`
-                      aspect-square rounded-md flex items-center justify-center text-[10px] font-bold transition-all
-                      ${currentLevelIdx === actualIdx 
-                        ? 'bg-[#22d3ee]/20 border border-[#22d3ee] text-[#22d3ee]' 
-                        : 'bg-slate-800/80 border border-white/5 text-[#94a3b8] hover:border-white/20 hover:text-white'}
-                    `}
-                  >
-                    {actualIdx + 1}
-                  </button>
-                );
-              })}
+          {gameMode !== 'timed' && (
+            <div className="glass-panel rounded-[20px] p-6">
+              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold">Stage Archive</div>
+              <button 
+                onClick={() => setShowLevelSelector(true)}
+                className="w-full py-2.5 mb-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-[#22d3ee] transition-all flex items-center justify-center gap-2"
+              >
+                <LayoutGrid size={14} />
+                Browse All
+              </button>
+              <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-3 font-semibold opacity-50">Quick Switch</div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {Array.from({ length: 25 }).map((_, i) => {
+                  const actualIdx = i + Math.max(0, currentLevelIdx - 10);
+                  if (actualIdx >= LEVEL_METADATA.length) return null;
+                  return (
+                    <button
+                      key={actualIdx}
+                      onClick={() => selectLevel(actualIdx)}
+                      className={`
+                        aspect-square rounded-md flex items-center justify-center text-[10px] font-bold transition-all
+                        ${currentLevelIdx === actualIdx 
+                          ? 'bg-[#22d3ee]/20 border border-[#22d3ee] text-[#22d3ee]' 
+                          : 'bg-slate-800/80 border border-white/5 text-[#94a3b8] hover:border-white/20 hover:text-white'}
+                      `}
+                    >
+                      {actualIdx + 1}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </aside>
 
         {/* Center: Game Board - Extracted and Memoized */}
@@ -876,26 +1175,26 @@ export default function App() {
               <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest font-bold px-1">Mission Telemetry</div>
               
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold">
-                    <Move size={12} className="text-indigo-400" />
+                <div className="space-y-1 group/stat">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] group-hover/stat:text-indigo-400 transition-colors">
+                    <Move size={12} strokeWidth={2.5} />
                     Clicks
                   </div>
-                  <div className={`text-xl font-black tabular-nums transition-colors ${currentLevel.clickLimit && clickCount >= currentLevel.clickLimit - 3 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                    {clickCount}
-                    {currentLevel.clickLimit && <span className="text-slate-600 text-sm ml-1">/ {currentLevel.clickLimit}</span>}
+                  <div className={`text-2xl font-black tabular-nums transition-all ${currentLevel.clickLimit && clickCount >= currentLevel.clickLimit - 3 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                    {clickCount.toString().padStart(2, '0')}
+                    {currentLevel.clickLimit && <span className="text-slate-700 text-xs ml-1 font-bold">/ {currentLevel.clickLimit.toString().padStart(2, '0')}</span>}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold">
-                    <Clock size={12} className="text-cyan-400" />
+                <div className="space-y-1 group/stat">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] group-hover/stat:text-cyan-400 transition-colors">
+                    <Clock size={12} strokeWidth={2.5} />
                     Time
                   </div>
-                  <div className={`text-xl font-black tabular-nums transition-colors ${timeLeft !== null && timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                  <div className={`text-2xl font-black tabular-nums transition-all ${timeLeft !== null && timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                     {timeLeft === null ? '--:--' : (
                       <span className="flex items-baseline gap-0.5">
                         {Math.floor(timeLeft / 60)}:{Math.floor(timeLeft % 60).toString().padStart(2, '0')}
-                        <span className="text-[10px] opacity-40">.{Math.floor((timeLeft % 1) * 10)}</span>
+                        <span className="text-[12px] opacity-40 font-bold">.{Math.floor((timeLeft % 1) * 10)}</span>
                       </span>
                     )}
                   </div>
@@ -1015,9 +1314,11 @@ export default function App() {
 // Memoized Stat Item for efficiency
 const StatItem = React.memo(({ label, value }: { label: string, value: string | number }) => {
   return (
-    <div className="text-center min-w-[60px]">
-      <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-0.5">{label}</div>
-      <div className="text-base lg:text-lg font-bold tabular-nums text-white">{value}</div>
+    <div className="text-center min-w-[70px] lg:min-w-[80px] group/stat">
+      <div className="text-[9px] uppercase text-[#94a3b8] font-black tracking-[0.2em] mb-1 group-hover/stat:text-[#22d3ee] transition-colors">{label}</div>
+      <div className="text-xl lg:text-2xl font-black tabular-nums text-white chromatic-title leading-tight">
+        {typeof value === 'number' ? value.toString().padStart(2, '0') : value}
+      </div>
     </div>
   );
 });
@@ -1285,7 +1586,9 @@ const GameBoard = React.memo(({
                 whileTap={{ scale: isLocked ? 1 : 0.9 }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
                   setHoveredArrowId(arrow.id);
                   handleArrowClick(arrow);
                 }}

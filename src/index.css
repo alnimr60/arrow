@@ -7,8 +7,8 @@
   
   --animate-gradient-x: gradient-x 3s ease infinite;
   --animate-flashlight-preview: flashlight-preview 4s ease-in-out infinite;
-  --animate-noise: noise 0.2s steps(4) infinite;
   --animate-scanline: scanline 8s linear infinite;
+  --animate-spin-slow: spin 8s linear infinite;
 
   @keyframes gradient-x {
     0%, 100% { background-position: 0% 50%; }
