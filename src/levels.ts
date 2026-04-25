@@ -7,7 +7,7 @@ function isPathBlocked(arrow: { x: number, y: number, dir: Direction }, others: 
   const { x, y, dir } = arrow;
   
   // Check arrows
-  const arrowBlocked = others.some(a => {
+  const arrowBlocked = (others || []).some(a => {
     switch (dir) {
       case 'up': return a.x === x && a.y < y;
       case 'down': return a.x === x && a.y > y;
@@ -18,7 +18,7 @@ function isPathBlocked(arrow: { x: number, y: number, dir: Direction }, others: 
   if (arrowBlocked) return true;
 
   // Check Gates
-  const gateBlocked = tiles.some(t => {
+  const gateBlocked = (tiles || []).some(t => {
     if (t.isOpen) return false;
     const isGate = t.type === 'gate-vertical' || t.type === 'gate-horizontal';
     if (!isGate) return false;
@@ -44,7 +44,7 @@ function isSolvable(level: Level): boolean {
   const canRemove = (arrow: ArrowData, remaining: ArrowData[], tiles: TileData[]): boolean => {
     // Lock logic
     if (arrow.type === 'locked') {
-      if (remaining.some(a => a.type === 'key')) return false;
+      if ((remaining || []).some(a => a.type === 'key')) return false;
     }
 
     // Path logic
@@ -109,8 +109,8 @@ function isSolvable(level: Level): boolean {
               if (fx < 0 || fx >= level.gridSize || fy < 0 || fy >= level.gridSize) break;
               
               // Blocked check
-              const blocked = newState.some(other => !removed.has(other.id) && other.x === fx && other.y === fy) ||
-                            newTiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === fx && t.y === fy);
+              const blocked = (newState || []).some(other => !removed.has(other.id) && other.x === fx && other.y === fy) ||
+                            (newTiles || []).some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === fx && t.y === fy);
               if (blocked) break;
 
               // Cycle check
@@ -124,8 +124,8 @@ function isSolvable(level: Level): boolean {
           };
 
           if (nx >= 0 && nx < level.gridSize && ny >= 0 && ny < level.gridSize) {
-             const occupied = newState.some(other => !removed.has(other.id) && other.x === nx && other.y === ny) ||
-                              newTiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+             const occupied = (newState || []).some(other => !removed.has(other.id) && other.x === nx && other.y === ny) ||
+                              (newTiles || []).some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
              if (!occupied) {
                 const finalPos = getFinalPlatformPos(nx, ny);
                 return { ...a, x: finalPos.x, y: finalPos.y };
@@ -277,7 +277,7 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
                             }
                         });
 
-                        const blockedByOthers = arrows.some(a => {
+                        const blockedByOthers = (arrows || []).some(a => {
                             switch (dir) {
                                 case 'up': return a.x === x && a.y < y;
                                 case 'down': return a.x === x && a.y > y;
@@ -291,15 +291,15 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
                           if (strategy === 'Critical Chain') {
                             // Favor blocking the EXACT last arrow placed to build a linear chain
                             const lastArrow = arrows[arrows.length - 1];
-                            if (lastArrow && blocksList.some(a => a.id === lastArrow.id)) {
+                            if (lastArrow && (blocksList || []).some(a => a.id === lastArrow.id)) {
                               score += 100;
                             } else if (arrows.length > 0) {
                               score -= 30; // Penalize non-chain extensions
                             }
                           } else if (strategy === 'Dependency Web') {
                             // Favor blocking arrows that are ALREADY blocking others (deep tree)
-                            const deepBlocks = blocksList.filter(target => 
-                              arrows.some(other => {
+                            const deepBlocks = (blocksList || []).filter(target => 
+                              (arrows || []).some(other => {
                                 switch(target.dir) {
                                   case 'up': return other.x === target.x && other.y > target.y;
                                   case 'down': return other.x === target.x && other.y < target.y;
@@ -369,7 +369,7 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
     }
 
     // Secondary Logic: Ensure keys exist for locks
-    if (arrows.some(a => a.type === 'locked')) {
+    if ((arrows || []).some(a => a.type === 'locked')) {
         const canBeKey = arrows.filter(a => a.type === 'normal');
         if (canBeKey.length > 0) rng.pick(canBeKey).type = 'key';
         else arrows = arrows.filter(a => a.type !== 'locked');

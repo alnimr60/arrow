@@ -24,6 +24,7 @@ import {
   Volume2,
   VolumeX,
   Clock,
+  Play,
   AlertTriangle,
   Settings,
   RotateCcw as RefreshCw,
@@ -141,10 +142,11 @@ const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', 
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'menu' | 'game' | 'timedConfig' | 'timedResult'>('menu');
-  const [gameMode, setGameMode] = useState<'standard' | 'invisible' | 'timed'>('standard');
+  const [gameMode, setGameMode] = useState<'standard' | 'invisible' | 'timed' | 'premove'>('standard');
   const [timedFlavor, setTimedFlavor] = useState<'standard' | 'invisible'>('standard');
   const [timedDuration, setTimedDuration] = useState<1 | 3 | 5>(3);
   const [timedScore, setTimedScore] = useState(0);
+  const [lastSessionDuration, setLastSessionDuration] = useState<number>(3);
   const [timedLevelIdx, setTimedLevelIdx] = useState(0);
 
   const [standardLevelIdx, setStandardLevelIdx] = useState(() => {
@@ -153,6 +155,10 @@ export default function App() {
   });
   const [invisibleLevelIdx, setInvisibleLevelIdx] = useState(() => {
     const saved = localStorage.getItem('invisible-level');
+    return saved ? parseInt(saved) : 0;
+  });
+  const [premoveLevelIdx, setPremoveLevelIdx] = useState(() => {
+    const saved = localStorage.getItem('premove-level');
     return saved ? parseInt(saved) : 0;
   });
 
@@ -164,27 +170,45 @@ export default function App() {
     const saved = localStorage.getItem('invisible-max-level');
     return saved ? parseInt(saved) : 0;
   });
+  const [premoveMaxLevel, setPremoveMaxLevel] = useState(() => {
+    const saved = localStorage.getItem('premove-max-level');
+    return saved ? parseInt(saved) : 0;
+  });
 
-  const currentLevelIdx = gameMode === 'timed' ? timedLevelIdx : (gameMode === 'standard' ? standardLevelIdx : invisibleLevelIdx);
-  const maxReachedLevel = gameMode === 'standard' ? standardMaxLevel : (gameMode === 'invisible' ? invisibleMaxLevel : 0);
+  const lastScoredTimedLevelRef = useRef<number | null>(null);
+  const lastExecutedIndexRef = useRef<number>(-1);
+
+  const currentLevelIdx = gameMode === 'timed' ? timedLevelIdx : 
+                         gameMode === 'standard' ? standardLevelIdx : 
+                         gameMode === 'invisible' ? invisibleLevelIdx : premoveLevelIdx;
+  const maxReachedLevel = gameMode === 'standard' ? standardMaxLevel : 
+                          gameMode === 'invisible' ? invisibleMaxLevel : 
+                          gameMode === 'premove' ? premoveMaxLevel : 0;
   const setCurrentLevelIdx = (valOrFn: number | ((prev: number) => number)) => {
     if (gameMode === 'standard') {
       setStandardLevelIdx(valOrFn);
       const next = typeof valOrFn === 'function' ? valOrFn(standardLevelIdx) : valOrFn;
       localStorage.setItem('standard-level', next.toString());
-    } else {
+    } else if (gameMode === 'invisible') {
       setInvisibleLevelIdx(valOrFn);
       const next = typeof valOrFn === 'function' ? valOrFn(invisibleLevelIdx) : valOrFn;
       localStorage.setItem('invisible-level', next.toString());
+    } else if (gameMode === 'premove') {
+      setPremoveLevelIdx(valOrFn);
+      const next = typeof valOrFn === 'function' ? valOrFn(premoveLevelIdx) : valOrFn;
+      localStorage.setItem('premove-level', next.toString());
     }
   };
   const setMaxReachedLevel = (val: number) => {
     if (gameMode === 'standard') {
       setStandardMaxLevel(val);
       localStorage.setItem('standard-max-level', val.toString());
-    } else {
+    } else if (gameMode === 'invisible') {
       setInvisibleMaxLevel(val);
       localStorage.setItem('invisible-max-level', val.toString());
+    } else if (gameMode === 'premove') {
+      setPremoveMaxLevel(val);
+      localStorage.setItem('premove-max-level', val.toString());
     }
   };
 
@@ -196,12 +220,15 @@ export default function App() {
   const [history, setHistory] = useState<{ arrows: ArrowData[], removedIds: Set<string>, tiles: TileData[], toolbox: ToolboxConfig, clicks?: number }[]>([]);
   const [toolbox, setToolbox] = useState<ToolboxConfig>({ rotations: 0, shifts: 0 });
   const [activeTool, setActiveTool] = useState<'rotate' | null>(null);
+  const [premoveQueue, setPremoveQueue] = useState<string[]>([]);
+  const [isExecutingPremove, setIsExecutingPremove] = useState(false);
+  const [execIndex, setExecIndex] = useState(-1);
   const [hoveredArrowId, setHoveredArrowId] = useState<string | null>(null);
   const [shakeId, setShakeId] = useState<string | null>(null);
   const [hintId, setHintId] = useState<string | null>(null);
   const [showVictory, setShowVictory] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
-  const [gameOverReason, setGameOverReason] = useState<'clicks' | 'time' | null>(null);
+  const [gameOverReason, setGameOverReason] = useState<'clicks' | 'time' | 'blocked' | null>(null);
   const [clickCount, setClickCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timedTotalSeconds, setTimedTotalSeconds] = useState(0);
@@ -271,12 +298,17 @@ export default function App() {
     setShowGameOver(false);
     setGameOverReason(null);
     setClickCount(0);
+    setPremoveQueue([]);
+    setIsExecutingPremove(false);
     
     if (gameMode === 'timed') {
       if (timeLeft === null) {
         const totalSecs = timedDuration * 60;
         setTimeLeft(totalSecs);
         setTimedTotalSeconds(totalSecs);
+        setLastSessionDuration(timedDuration);
+        setTimedScore(0);
+        lastScoredTimedLevelRef.current = null;
       }
     } else {
       setTimeLeft(currentLevel.timeLimit || null);
@@ -287,7 +319,7 @@ export default function App() {
   }, [currentLevelIdx, currentLevel, gameMode, timedDuration, isMuted]);
 
   const hasKeys = useMemo(() => {
-    return arrows.some(a => !removedIds.has(a.id) && a.type === 'key');
+    return (arrows || []).some(a => !removedIds.has(a.id) && a.type === 'key');
   }, [arrows, removedIds]);
 
   // Check if an arrow is blocked by any other remaining arrow or closed gate
@@ -301,16 +333,16 @@ export default function App() {
     // Check arrows without filter for speed
     const isArrowBlocked = (() => {
       switch (dir) {
-        case 'up': return allArrows.some(a => !removed.has(a.id) && a.x === x && a.y < y);
-        case 'down': return allArrows.some(a => !removed.has(a.id) && a.x === x && a.y > y);
-        case 'left': return allArrows.some(a => !removed.has(a.id) && a.y === y && a.x < x);
-        case 'right': return allArrows.some(a => !removed.has(a.id) && a.y === y && a.x > x);
+        case 'up': return (allArrows || []).some(a => !removed.has(a.id) && a.x === x && a.y < y);
+        case 'down': return (allArrows || []).some(a => !removed.has(a.id) && a.x === x && a.y > y);
+        case 'left': return (allArrows || []).some(a => !removed.has(a.id) && a.y === y && a.x < x);
+        case 'right': return (allArrows || []).some(a => !removed.has(a.id) && a.y === y && a.x > x);
       }
     })();
     if (isArrowBlocked) return true;
 
     // Check Gates
-    const isGateBlocked = currentTiles.some(t => {
+    const isGateBlocked = (currentTiles || []).some(t => {
       if (t.isOpen) return false;
       if (t.type !== 'gate-vertical' && t.type !== 'gate-horizontal') return false;
       switch (dir) {
@@ -334,33 +366,7 @@ export default function App() {
     return next[dir];
   };
 
-  const handleArrowClick = useCallback((arrow: ArrowData) => {
-    const now = Date.now();
-    if (now - lastClickTimeRef.current < 250) return;
-    lastClickTimeRef.current = now;
-
-    if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
-
-    const blocked = isBlocked(arrow, arrows, removedIds, tiles);
-
-    if (blocked) {
-      if (!isMuted) soundService.playError();
-      setShakeId(arrow.id);
-      setTimeout(() => setShakeId(null), 500);
-      
-      setClickCount(prev => {
-        const next = prev + 1;
-        if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
-          setGameOverReason('clicks');
-          setShowGameOver(true);
-          if (!isMuted) soundService.playError();
-        }
-        return next;
-      });
-      return;
-    }
-
-    // NOT BLOCKED
+  const launchArrow = useCallback((arrow: ArrowData) => {
     if (!isMuted) {
       soundService.playLaunch();
       soundService.playRemove(arrow.dir);
@@ -369,19 +375,19 @@ export default function App() {
       if (arrow.type === 'shifter') soundService.playShift();
     }
 
+    // Save history
+    setHistory(h => [...h, { 
+      arrows: [...arrows], 
+      removedIds: new Set(removedIds), 
+      tiles: [...tiles], 
+      toolbox: { ...toolbox }, 
+      clicks: clickCount 
+    }]);
+
     setClickCount(prev => {
       const next = prev + 1;
       
-      // Save history
-      setHistory(h => [...h, { 
-        arrows: [...arrows], 
-        removedIds: new Set(removedIds), 
-        tiles: [...tiles], 
-        toolbox: { ...toolbox }, 
-        clicks: prev 
-      }]);
-
-      if (gameMode !== 'timed' && currentLevel.clickLimit && next >= currentLevel.clickLimit && removedIds.size + 1 < arrows.length) {
+      if (gameMode !== 'timed' && gameMode !== 'premove' && currentLevel.clickLimit && next >= currentLevel.clickLimit && removedIds.size + 1 < arrows.length) {
         setGameOverReason('clicks');
         setShowGameOver(true);
         if (!isMuted) soundService.playError();
@@ -396,8 +402,11 @@ export default function App() {
       // Victory check
       if (next.size === arrows.length) {
         if (gameMode === 'timed') {
-          setTimedScore(s => s + 1);
-          if (!isMuted) soundService.playLevelComplete();
+          if (lastScoredTimedLevelRef.current !== timedLevelIdx) {
+            lastScoredTimedLevelRef.current = timedLevelIdx;
+            setTimedScore(s => s + 1);
+            if (!isMuted) soundService.playLevelComplete();
+          }
           setTimeout(() => {
             setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
             setTimedLevelIdx(Math.floor(Math.random() * 1000000));
@@ -426,7 +435,6 @@ export default function App() {
       });
       
       neighborsToRotate.forEach(n => {
-        // Flash shake effect for visual feedback
         setShakeId(n.id);
       });
       setTimeout(() => setShakeId(null), 300);
@@ -451,8 +459,8 @@ export default function App() {
              if (arrow.dir === 'up') ny--; if (arrow.dir === 'down') ny++;
              if (arrow.dir === 'left') nx--; if (arrow.dir === 'right') nx++;
              if (nx < 0 || nx >= currentLevel.gridSize || ny < 0 || ny >= currentLevel.gridSize) return a;
-             const isOccupied = prev.some(other => (!removedIds.has(other.id) && other.id !== arrow.id) && other.x === nx && other.y === ny) ||
-                              tiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+             const isOccupied = (prev || []).some(other => (!removedIds.has(other.id) && other.id !== arrow.id) && other.x === nx && other.y === ny) ||
+                               (tiles || []).some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
              if (!isOccupied) return { ...a, x: nx, y: ny };
            }
            return a;
@@ -461,7 +469,109 @@ export default function App() {
     }
 
     setHintId(null);
-  }, [arrows, isBlocked, isMuted, currentLevel, tiles, toolbox, showVictory, showGameOver, removedIds, gameMode]);
+  }, [arrows, removedIds, tiles, toolbox, isMuted, gameMode, currentLevel]);
+
+  const executionStateRef = useRef({ arrows, removedIds, tiles, isBlocked, launchArrow, isMuted });
+
+  useEffect(() => {
+    executionStateRef.current = { arrows, removedIds, tiles, isBlocked, launchArrow, isMuted };
+  });
+
+  const executePremove = useCallback(() => {
+    if (premoveQueue.length === 0 || isExecutingPremove) return;
+    setIsExecutingPremove(true);
+    setExecIndex(0);
+    lastExecutedIndexRef.current = -1;
+  }, [premoveQueue, isExecutingPremove]);
+
+  // Reactive execution loop
+  useEffect(() => {
+    if (!isExecutingPremove || execIndex < 0 || execIndex >= premoveQueue.length) {
+      if (isExecutingPremove && execIndex >= premoveQueue.length) {
+        setIsExecutingPremove(false);
+        setExecIndex(-1);
+        setPremoveQueue([]);
+        lastExecutedIndexRef.current = -1;
+      }
+      return;
+    }
+
+    // Protection against infinite loops: only execute if the index has advanced
+    if (execIndex <= lastExecutedIndexRef.current) return;
+    lastExecutedIndexRef.current = execIndex;
+
+    const { arrows: curArrows, removedIds: curRemovedIds, tiles: curTiles, isBlocked: curIsBlocked, launchArrow: curLaunchArrow, isMuted: curIsMuted } = executionStateRef.current;
+
+    const arrowId = premoveQueue[execIndex];
+    const arrow = curArrows.find(a => a.id === arrowId);
+    
+    if (!arrow || curRemovedIds.has(arrow.id)) {
+      setExecIndex(prev => prev + 1);
+      return;
+    }
+
+    const blocked = curIsBlocked(arrow, curArrows, curRemovedIds, curTiles);
+
+    if (blocked) {
+      if (!curIsMuted) soundService.playError();
+      setShakeId(arrow.id);
+      setTimeout(() => setShakeId(null), 500);
+      setGameOverReason('blocked');
+      setShowGameOver(true);
+      setIsExecutingPremove(false);
+      setExecIndex(-1);
+      lastExecutedIndexRef.current = -1;
+      return;
+    }
+
+    curLaunchArrow(arrow);
+    
+    const timer = setTimeout(() => {
+      setExecIndex(prev => prev + 1);
+    }, 200); 
+
+    return () => clearTimeout(timer);
+  }, [isExecutingPremove, execIndex, premoveQueue]);
+
+  const handleArrowClick = useCallback((arrow: ArrowData) => {
+    const now = Date.now();
+    if (now - lastClickTimeRef.current < 250) return;
+    lastClickTimeRef.current = now;
+
+    if (removedIds.has(arrow.id) || showVictory || showGameOver || isExecutingPremove) return;
+
+    if (gameMode === 'premove') {
+      if (!isMuted) soundService.playClick();
+      setPremoveQueue(prev => {
+        if (prev.includes(arrow.id)) {
+          return prev.filter(id => id !== arrow.id);
+        }
+        return [...prev, arrow.id];
+      });
+      return;
+    }
+
+    const blocked = isBlocked(arrow, arrows, removedIds, tiles);
+
+    if (blocked) {
+      if (!isMuted) soundService.playError();
+      setShakeId(arrow.id);
+      setTimeout(() => setShakeId(null), 500);
+      
+      setClickCount(prev => {
+        const next = prev + 1;
+        if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
+          setGameOverReason('clicks');
+          setShowGameOver(true);
+          if (!isMuted) soundService.playError();
+        }
+        return next;
+      });
+      return;
+    }
+
+    launchArrow(arrow);
+  }, [arrows, isBlocked, isMuted, currentLevel, tiles, toolbox, showVictory, showGameOver, removedIds, gameMode, isExecutingPremove, premoveQueue, launchArrow]);
 
   const useTool = (type: 'rotate' | 'shift', targetArrowId: string) => {
     if (!isMuted) soundService.playClick();
@@ -531,6 +641,9 @@ export default function App() {
     setGameOverReason(null);
     setClickCount(0);
     setTimeLeft(currentLevel.timeLimit || null);
+    setPremoveQueue([]);
+    setIsExecutingPremove(false);
+    setExecIndex(-1);
   };
 
   const handleHint = () => {
@@ -613,7 +726,7 @@ export default function App() {
         </div>
 
         {/* Main Content: 3D Mode Gallery */}
-        <div className="flex flex-col md:flex-row w-full max-w-7xl h-full items-center justify-center gap-4 md:gap-8 px-6 md:px-12 relative z-10 pt-24 pb-12 md:pt-0">
+        <div className="flex flex-wrap w-full max-w-7xl h-full items-center justify-center gap-4 md:gap-6 px-6 md:px-12 relative z-10 pt-24 pb-12 md:pt-0">
           
           {/* Mode 1: Standard */}
           <motion.div 
@@ -621,51 +734,51 @@ export default function App() {
             animate={{ opacity: 1, x: 0, rotateY: -10 }}
             whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
             transition={{ duration: 1.2, ease: "easeOut" }}
-            className="relative w-full md:w-[30%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
+            className="relative w-full md:w-[23%] aspect-[16/10] md:h-[55vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
             onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
           >
             <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-[#22d3ee]/40 group-hover/mode:shadow-[0_0_60px_rgba(34,211,238,0.1)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.1)_0%,transparent_70%)]" />
-              <div className="relative h-full flex flex-col p-6 md:p-8">
+              <div className="relative h-full flex flex-col p-6">
                 <div className="mb-auto">
-                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-[#22d3ee] mb-2 opacity-70">Protocol 01</div>
-                  <h2 className="text-2xl md:text-4xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Standard</h2>
+                  <div className="text-[8px] font-black uppercase tracking-[0.5em] text-[#22d3ee] mb-2 opacity-70">Protocol 01</div>
+                  <h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Standard</h2>
                 </div>
                 <div className="flex-1 flex items-center justify-center py-2">
-                  <div className="scale-[0.5] md:scale-75 group-hover/mode:scale-80 transition-transform duration-700">
+                  <div className="scale-[0.45] md:scale-60 group-hover/mode:scale-75 transition-transform duration-700">
                     <MenuPreviewBoard mode="standard" levelIdx={4} />
                   </div>
                 </div>
                 <div className="mt-auto pt-4 border-t border-white/5">
                   <div className="flex items-center justify-between">
-                    <div className="text-[8px] font-black text-white/40 uppercase tracking-widest">Sector Logged</div>
-                    <div className="text-lg font-black italic text-[#22d3ee]">{standardMaxLevel + 1}</div>
+                    <div className="text-[7px] font-black text-white/40 uppercase tracking-widest">Sector Logged</div>
+                    <div className="text-sm font-black italic text-[#22d3ee]">{standardMaxLevel + 1}</div>
                   </div>
                 </div>
               </div>
             </div>
           </motion.div>
 
-          {/* Mode 2: Timed Rush (Centerpiece) */}
+          {/* Mode 2: Timed Rush */}
           <motion.div 
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0, rotateY: 0 }}
             whileHover={{ z: 100, scale: 1.05 }}
             transition={{ duration: 1.2, delay: 0.1, ease: "easeOut" }}
-            className="relative w-full md:w-[32%] aspect-[16/10] md:h-[70vh] group/mode cursor-pointer z-20 perspective-[1000px] preserve-3d"
+            className="relative w-full md:w-[25%] aspect-[16/10] md:h-[65vh] group/mode cursor-pointer z-20 perspective-[1000px] preserve-3d"
             onClick={() => { setGameMode('timed'); setCurrentScreen('timedConfig'); }}
           >
             <div className="absolute inset-0 bg-[#0f0f0f] border-2 border-white/10 rounded-[3rem] overflow-hidden shadow-[0_40px_100px_rgba(0,0,0,0.8)] transition-all group-hover/mode:border-amber-500/50 group-hover/mode:shadow-[0_0_80px_rgba(245,158,11,0.2)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,0.15)_0%,transparent_70%)] opacity-0 group-hover/mode:opacity-100 transition-opacity" />
-              <div className="relative h-full flex flex-col p-8 md:p-10">
+              <div className="relative h-full flex flex-col p-6 md:p-10">
                 <div className="mb-auto text-center">
-                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-amber-500 mb-2">Protocol 02 // Critical</div>
-                  <h2 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter text-white chromatic-title transition-all">Timed Rush</h2>
+                  <div className="text-[8px] font-black uppercase tracking-[0.5em] text-amber-500 mb-2">Protocol 02 // Critical</div>
+                  <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-white chromatic-title transition-all leading-tight">Timed Rush</h2>
                 </div>
                 <div className="flex-1 flex items-center justify-center">
-                  <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 3, repeat: Infinity }} className="relative">
+                  <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }} transition={{ duration: 4, repeat: Infinity }} className="relative">
                     <div className="absolute inset-0 bg-amber-500 blur-3xl opacity-20" />
-                    <Clock size={64} className="text-amber-500 relative z-10" strokeWidth={1.5} />
+                    <Clock size={48} className="text-amber-500 relative z-10" strokeWidth={1.5} />
                   </motion.div>
                 </div>
                 <div className="mt-auto space-y-4 text-center">
@@ -677,31 +790,74 @@ export default function App() {
             </div>
           </motion.div>
 
-          {/* Mode 3: Invisible */}
+          {/* Mode 3: Premove Challenge (New Piece) */}
+          <motion.div 
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0, rotateY: 5 }}
+            whileHover={{ z: 80, scale: 1.05, rotateY: 0 }}
+            transition={{ duration: 1.2, delay: 0.2, ease: "easeOut" }}
+            className="relative w-full md:w-[23%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer z-10 perspective-[1000px] preserve-3d"
+            onClick={() => { setGameMode('premove'); setCurrentScreen('game'); }}
+          >
+            <div className="absolute inset-0 bg-[#080808] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-emerald-500/40 group-hover/mode:shadow-[0_0_60px_rgba(16,185,129,0.1)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.1)_0%,transparent_70%)] opacity-0 group-hover/mode:opacity-100 transition-opacity" />
+              <div className="relative h-full flex flex-col p-6">
+                <div className="mb-auto">
+                  <div className="text-[8px] font-black uppercase tracking-[0.5em] text-emerald-400 mb-2 opacity-70">Protocol 04</div>
+                  <h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Premove</h2>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                   <div className="relative">
+                      <motion.div 
+                        animate={{ 
+                          pathLength: [0, 1],
+                          opacity: [0, 1, 0]
+                        }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        className="flex flex-col gap-2"
+                      >
+                         <div className="w-10 h-1 border border-emerald-500/40" />
+                         <div className="w-10 h-1 border border-emerald-500/40 opacity-60" />
+                         <div className="w-10 h-1 border border-emerald-500/40 opacity-30" />
+                      </motion.div>
+                   </div>
+                </div>
+                <div className="mt-auto space-y-3">
+                   <div className="text-[7px] text-emerald-400 font-bold uppercase tracking-widest opacity-50 px-1 text-center">Batch Execution Mode</div>
+                   <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                    <div className="text-[7px] font-black text-white/40 uppercase tracking-widest">Sync Efficiency</div>
+                    <div className="text-sm font-black italic text-emerald-400">{premoveMaxLevel + 1}</div>
+                   </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Mode 4: Invisible */}
           <motion.div 
             initial={{ opacity: 0, x: 50, rotateY: -30 }}
             animate={{ opacity: 1, x: 0, rotateY: 10 }}
             whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
             transition={{ duration: 1.2, ease: "easeOut" }}
-            className="relative w-full md:w-[30%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
+            className="relative w-full md:w-[23%] aspect-[16/10] md:h-[55vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
             onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
           >
             <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-purple-500/40 group-hover/mode:shadow-[0_0_60px_rgba(168,85,247,0.1)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(168,85,247,0.1)_0%,transparent_70%)]" />
-              <div className="relative h-full flex flex-col p-6 md:p-8">
+              <div className="relative h-full flex flex-col p-6">
                 <div className="mb-auto">
-                  <div className="text-[9px] font-black uppercase tracking-[0.5em] text-purple-400 mb-2 opacity-70">Protocol 03</div>
-                  <h2 className="text-2xl md:text-4xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Invisible</h2>
+                  <div className="text-[8px] font-black uppercase tracking-[0.5em] text-purple-400 mb-2 opacity-70">Protocol 03</div>
+                  <h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-white group-hover/mode:chromatic-title transition-all">Invisible</h2>
                 </div>
                 <div className="flex-1 flex items-center justify-center py-2">
-                  <div className="scale-[0.5] md:scale-75 group-hover/mode:scale-80 transition-transform duration-700 blur-[2px] group-hover/mode:blur-0">
+                  <div className="scale-[0.45] md:scale-60 group-hover/mode:scale-75 transition-transform duration-700 blur-[2px] group-hover/mode:blur-0">
                     <MenuPreviewBoard mode="invisible" levelIdx={12} />
                   </div>
                 </div>
                 <div className="mt-auto pt-4 border-t border-white/5 text-right">
                   <div className="flex items-center justify-between">
-                    <div className="text-[8px] font-black text-white/40 uppercase tracking-widest">Memory Sync</div>
-                    <div className="text-lg font-black italic text-purple-400">{invisibleMaxLevel + 1}</div>
+                    <div className="text-[7px] font-black text-white/40 uppercase tracking-widest">Memory Sync</div>
+                    <div className="text-sm font-black italic text-purple-400">{invisibleMaxLevel + 1}</div>
                   </div>
                 </div>
               </div>
@@ -877,7 +1033,7 @@ export default function App() {
                       <div className="flex flex-col items-center">
                         <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">Duration</span>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-sm md:text-lg font-black text-[#22d3ee]">{(timedTotalSeconds / 60).toFixed(0)}</span>
+                          <span className="text-sm md:text-lg font-black text-[#22d3ee]">{lastSessionDuration}</span>
                           <span className="text-[8px] font-black text-[#22d3ee]/40 uppercase">Min</span>
                         </div>
                       </div>
@@ -885,7 +1041,7 @@ export default function App() {
                       <div className="flex flex-col items-center">
                         <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">Efficiency</span>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-sm md:text-lg font-black text-[#a855f7]">{(timedScore / (timedTotalSeconds / 60) || 0).toFixed(1)}</span>
+                          <span className="text-sm md:text-lg font-black text-[#a855f7]">{(timedScore / lastSessionDuration || 0).toFixed(1)}</span>
                           <span className="text-[8px] font-black text-[#a855f7]/40 uppercase">E/M</span>
                         </div>
                       </div>
@@ -935,10 +1091,14 @@ export default function App() {
       {/* Cinematic Background Shaders */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className={`absolute top-0 left-0 w-full h-full opacity-30 transition-colors duration-1000 ${
-          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_20%_20%,#083344_0%,transparent_50%)]' : 'bg-[radial-gradient(circle_at_20%_20%,#3b0764_0%,transparent_50%)]'
+          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_20%_20%,#083344_0%,transparent_50%)]' : 
+          gameMode === 'premove' ? 'bg-[radial-gradient(circle_at_20%_20%,#064e3b_0%,transparent_50%)]' :
+          'bg-[radial-gradient(circle_at_20%_20%,#3b0764_0%,transparent_50%)]'
         }`} />
         <div className={`absolute bottom-0 right-0 w-full h-full opacity-30 transition-colors duration-1000 ${
-          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_80%_80%,#1e1b4b_0%,transparent_50%)]' : 'bg-[radial-gradient(circle_at_80%_80%,#4c1d95_0%,transparent_50%)]'
+          gameMode === 'standard' ? 'bg-[radial-gradient(circle_at_80%_80%,#1e1b4b_0%,transparent_50%)]' : 
+          gameMode === 'premove' ? 'bg-[radial-gradient(circle_at_80%_80%,#06201b_0%,transparent_50%)]' :
+          'bg-[radial-gradient(circle_at_80%_80%,#4c1d95_0%,transparent_50%)]'
         }`} />
       </div>
 
@@ -980,9 +1140,13 @@ export default function App() {
           {(() => {
             const effectivelyInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
             return (
-              <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${effectivelyInvisible ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'}`}>
-                {effectivelyInvisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                <span className="hidden sm:inline">{effectivelyInvisible ? 'Invisible Mode' : 'Standard Mode'}</span>
+              <div className={`p-2 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                effectivelyInvisible ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 
+                gameMode === 'premove' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+              }`}>
+                {effectivelyInvisible ? <EyeOff size={16} /> : gameMode === 'premove' ? <RotateCcw size={16} /> : <Eye size={16} />}
+                <span className="hidden sm:inline">{effectivelyInvisible ? 'Invisible' : gameMode === 'premove' ? 'Premove' : 'Standard'} Mode</span>
               </div>
             );
           })()}
@@ -1029,11 +1193,11 @@ export default function App() {
                 </p>
               </div>
 
-              {arrows.some(a => a.type === 'rotator' || a.type === 'key' || a.type === 'shifter') && (
+              {(arrows || []).some(a => a.type === 'rotator' || a.type === 'key' || a.type === 'shifter') && (
                 <div className="pt-4 border-t border-white/5 space-y-3">
                   <h3 className="text-xs font-bold text-[#22d3ee] uppercase tracking-widest mb-2">Dynamic Objects</h3>
                   
-                  {arrows.some(a => a.type === 'rotator') && (
+                  {(arrows || []).some(a => a.type === 'rotator') && (
                     <div className="flex items-start gap-3">
                       <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
                          <RotateCcw size={10} className="text-purple-400" />
@@ -1042,7 +1206,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {arrows.some(a => a.type === 'key') && (
+                  {(arrows || []).some(a => a.type === 'key') && (
                     <div className="flex items-start gap-3">
                       <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
                          <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
@@ -1051,7 +1215,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {arrows.some(a => a.type === 'shifter') && (
+                  {(arrows || []).some(a => a.type === 'shifter') && (
                     <div className="flex items-start gap-3">
                       <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center shrink-0 mt-0.5">
                          <Move size={10} className="text-cyan-400" />
@@ -1121,6 +1285,9 @@ export default function App() {
           setHoveredArrowId={setHoveredArrowId}
           nextLevel={nextLevel}
           handleReset={handleReset}
+          premoveQueue={premoveQueue}
+          isExecutingPremove={isExecutingPremove}
+          executePremove={executePremove}
         />
 
         {/* Right Sidebar */ }
@@ -1410,7 +1577,10 @@ const GameBoard = React.memo(({
   handleArrowClick, 
   setHoveredArrowId,
   nextLevel,
-  handleReset
+  handleReset,
+  premoveQueue,
+  isExecutingPremove,
+  executePremove
 }: any) => {
   const [pointerPos, setPointerPos] = useState({ x: -1000, y: -1000 });
   const boardRef = useRef<HTMLDivElement>(null);
@@ -1574,6 +1744,8 @@ const GameBoard = React.memo(({
             const isShaking = shakeId === arrow.id;
             const isHinted = hintId === arrow.id;
             const isLocked = arrow.type === 'locked' && hasKeys;
+            const premoveIndex = premoveQueue?.indexOf(arrow.id);
+            const isQueued = premoveIndex !== -1;
 
             const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
             const offsetX = `calc(16px + ${arrow.x} * (${cellSize} + 8px))`;
@@ -1613,6 +1785,7 @@ const GameBoard = React.memo(({
                   ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
                   ${arrow.type === 'switch' ? 'shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
                   ${arrow.type === 'key' ? 'shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
+                  ${isQueued ? 'ring-2 ring-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : ''}
                   z-10
                 `}
                 style={{
@@ -1624,10 +1797,18 @@ const GameBoard = React.memo(({
                                    arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
                                    arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
                                    arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' :
+                                   isQueued ? 'rgba(16, 185, 129, 0.2)' :
                                    isHinted ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)'
                 }}
               >
                 <ArrowIcon arrow={arrow} />
+                {isQueued && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-white text-[10px] font-black italic bg-emerald-500 w-5 h-5 rounded-full flex items-center justify-center shadow-lg transform -translate-y-4">
+                      {premoveIndex + 1}
+                    </span>
+                  </div>
+                )}
                 {isLocked && <div className="absolute inset-0 flex items-center justify-center"><Lock size={12} className="text-white/40" /></div>}
                 {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
               </motion.button>
@@ -1685,7 +1866,8 @@ const GameBoard = React.memo(({
               </motion.div>
               <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Game Over</h2>
               <p className="text-red-400 font-mono text-xs mb-6 uppercase tracking-[0.3em]">
-                {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 'Temporal Decay'}
+                {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 
+                 gameOverReason === 'blocked' ? 'Sequence Failure' : 'Temporal Decay'}
               </p>
               <div className="flex gap-4">
                 <button
@@ -1699,7 +1881,47 @@ const GameBoard = React.memo(({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+        </div>
+
+        {/* Premove Execute Button */}
+        <AnimatePresence>
+          {gameMode === 'premove' && premoveQueue.length > 0 && !showVictory && !showGameOver && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute -bottom-20 left-1/2 -translate-x-1/2 z-30 w-full flex justify-center"
+            >
+              <button 
+                onClick={(e) => { e.stopPropagation(); executePremove(); }}
+                disabled={isExecutingPremove}
+                className={`
+                  group relative px-10 py-4 rounded-2xl font-black uppercase tracking-[0.4em] text-[11px] shadow-2xl transition-all overflow-hidden
+                  ${isExecutingPremove 
+                    ? 'bg-slate-800 text-slate-500 cursor-wait' 
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-[#06201b] shadow-emerald-500/40 hover:scale-110 active:scale-95'}
+                `}
+              >
+                <div className="relative z-10 flex items-center gap-3">
+                  {isExecutingPremove ? (
+                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                      <RotateCcw size={14} />
+                    </motion.div>
+                  ) : <Play size={14} fill="currentColor" />}
+                  {isExecutingPremove ? 'Synchronizing Movements...' : 'Run Sequence'}
+                </div>
+                {!isExecutingPremove && (
+                  <motion.div 
+                    className="absolute inset-0 bg-white/20"
+                    initial={{ x: '-100%' }}
+                    whileHover={{ x: '100%' }}
+                    transition={{ duration: 0.5 }}
+                  />
+                )}
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </section>
   );
