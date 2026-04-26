@@ -181,29 +181,21 @@ type GenerationStrategy = 'Critical Chain' | 'Dependency Web' | 'Sparse but Crit
  * Procedural Level Generator with Strategic Architectures
  */
 export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'invisible' = 'standard', isRandomDifficulty: boolean = false): Level {
-  // Unique seed per mode + level combination
-  const seed = mode === 'standard' ? levelIdx + 7777 : levelIdx + 14000;
+  // Unified seed logic for consistency
+  const seed = levelIdx + 7777;
   const rng = new SeededRandom(seed);
 
   // If random difficulty, pick a virtual levelIdx between 0 and 400 for variety
   const virtualIdx = isRandomDifficulty ? Math.floor(rng.next() * 400) : levelIdx;
 
-  // Grid scaling - Adjusted for mode and 300 levels
+  // Unified Grid scaling for all modes
   let gridSize = 4;
-  if (mode === 'standard') {
-    if (virtualIdx > 15) gridSize = 5;
-    if (virtualIdx > 50) gridSize = 6;
-    if (virtualIdx > 120) gridSize = 7;
-    if (virtualIdx > 220) gridSize = 8;
-    if (virtualIdx > 351) gridSize = 9;
-    if (virtualIdx > 480) gridSize = 10;
-  } else {
-    // Invisible mode starts small and stays manageable longer due to higher difficulty
-    if (virtualIdx > 20) gridSize = 5;
-    if (virtualIdx > 70) gridSize = 6;
-    if (virtualIdx > 150) gridSize = 7;
-    if (virtualIdx > 250) gridSize = 8;
-  }
+  if (virtualIdx > 15) gridSize = 5;
+  if (virtualIdx > 50) gridSize = 6;
+  if (virtualIdx > 120) gridSize = 7;
+  if (virtualIdx > 220) gridSize = 8;
+  if (virtualIdx > 351) gridSize = 9;
+  if (virtualIdx > 480) gridSize = 10;
 
   // Strategy Selection
   const strategies: GenerationStrategy[] = ['Critical Chain', 'Dependency Web', 'Sparse but Critical', 'Clustered Challenge'];
@@ -490,21 +482,13 @@ export const getLevelMetadata = (mode: 'standard' | 'invisible' = 'standard') =>
   const total = mode === 'standard' ? TOTAL_STANDARD_LEVELS : TOTAL_INVISIBLE_LEVELS;
   return Array.from({ length: total }).map((_, i) => {
     let gridSize = 4;
-    // Standard progression
-    if (mode === 'standard') {
-      if (i > 15) gridSize = 5;
-      if (i > 50) gridSize = 6;
-      if (i > 120) gridSize = 7;
-      if (i > 220) gridSize = 8;
-      if (i > 351) gridSize = 9;
-      if (i > 480) gridSize = 10;
-    } else {
-      // Invisible mode progression (now 300 stages)
-      if (i > 20) gridSize = 5;
-      if (i > 70) gridSize = 6;
-      if (i > 150) gridSize = 7;
-      if (i > 250) gridSize = 8;
-    }
+    // Unified progression for all modes
+    if (i > 15) gridSize = 5;
+    if (i > 50) gridSize = 6;
+    if (i > 120) gridSize = 7;
+    if (i > 220) gridSize = 8;
+    if (i > 351) gridSize = 9;
+    if (i > 480) gridSize = 10;
     return { id: i, gridSize };
   });
 };
