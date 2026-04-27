@@ -534,6 +534,7 @@ export default function App() {
 
   const executePremove = useCallback(() => {
     if (premoveQueue.length === 0 || isExecutingPremove) return;
+    soundService.resume();
     setIsExecutingPremove(true);
     setExecIndex(0);
     lastExecutedIndexRef.current = -1;
@@ -668,6 +669,7 @@ export default function App() {
   };
 
   const handleReset = () => {
+    soundService.resume();
     if (!isMuted) soundService.playLevelStart();
 
     if (gameMode === 'timed') {
@@ -731,6 +733,7 @@ export default function App() {
     if (now - lastNextLevelTimeRef.current < 500) return;
     lastNextLevelTimeRef.current = now;
 
+    soundService.resume();
     if (!isMuted) soundService.playClick();
     if (currentLevelIdx < LEVEL_METADATA.length - 1 && showVictory) {
       setShowVictory(false);
@@ -790,7 +793,7 @@ export default function App() {
             whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
             transition={{ duration: 1.2, ease: "easeOut" }}
             className="relative w-full md:w-[23%] aspect-[16/10] md:h-[55vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
-            onClick={() => { setGameMode('standard'); setCurrentScreen('game'); }}
+            onClick={() => { soundService.resume(); setGameMode('standard'); setCurrentScreen('game'); }}
           >
             <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-[#22d3ee]/40 group-hover/mode:shadow-[0_0_60px_rgba(34,211,238,0.1)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.1)_0%,transparent_70%)]" />
@@ -821,7 +824,7 @@ export default function App() {
             whileHover={{ z: 100, scale: 1.05 }}
             transition={{ duration: 1.2, delay: 0.1, ease: "easeOut" }}
             className="relative w-full md:w-[25%] aspect-[16/10] md:h-[65vh] group/mode cursor-pointer z-20 perspective-[1000px] preserve-3d"
-            onClick={() => { setGameMode('timed'); setCurrentScreen('timedConfig'); }}
+            onClick={() => { soundService.resume(); setGameMode('timed'); setCurrentScreen('timedConfig'); }}
           >
             <div className="absolute inset-0 bg-[#0f0f0f] border-2 border-white/10 rounded-[3rem] overflow-hidden shadow-[0_40px_100px_rgba(0,0,0,0.8)] transition-all group-hover/mode:border-amber-500/50 group-hover/mode:shadow-[0_0_80px_rgba(245,158,11,0.2)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,0.15)_0%,transparent_70%)] opacity-0 group-hover/mode:opacity-100 transition-opacity" />
@@ -852,7 +855,7 @@ export default function App() {
             whileHover={{ z: 80, scale: 1.05, rotateY: 0 }}
             transition={{ duration: 1.2, delay: 0.2, ease: "easeOut" }}
             className="relative w-full md:w-[23%] aspect-[16/10] md:h-[60vh] group/mode cursor-pointer z-10 perspective-[1000px] preserve-3d"
-            onClick={() => { setGameMode('premove'); setCurrentScreen('game'); }}
+            onClick={() => { soundService.resume(); setGameMode('premove'); setCurrentScreen('game'); }}
           >
             <div className="absolute inset-0 bg-[#080808] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-emerald-500/40 group-hover/mode:shadow-[0_0_60px_rgba(16,185,129,0.1)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.1)_0%,transparent_70%)] opacity-0 group-hover/mode:opacity-100 transition-opacity" />
@@ -895,7 +898,7 @@ export default function App() {
             whileHover={{ rotateY: 0, z: 50, scale: 1.02 }}
             transition={{ duration: 1.2, ease: "easeOut" }}
             className="relative w-full md:w-[23%] aspect-[16/10] md:h-[55vh] group/mode cursor-pointer perspective-[1000px] preserve-3d"
-            onClick={() => { setGameMode('invisible'); setCurrentScreen('game'); }}
+            onClick={() => { soundService.resume(); setGameMode('invisible'); setCurrentScreen('game'); }}
           >
             <div className="absolute inset-0 bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl transition-all group-hover/mode:border-purple-500/40 group-hover/mode:shadow-[0_0_60px_rgba(168,85,247,0.1)]">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(168,85,247,0.1)_0%,transparent_70%)]" />
@@ -994,6 +997,7 @@ export default function App() {
                     </button>
                     <button 
                       onClick={() => {
+                        soundService.resume();
                         const totalSecs = timedDuration * 60;
                         setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
                         setTimedLevelIdx(Math.floor(Math.random() * 1000000));
@@ -1332,10 +1336,12 @@ export default function App() {
           timedFlavor={timedFlavor}
           LEVEL_METADATA={LEVEL_METADATA}
           handleArrowClick={handleArrowClick}
+          hoveredArrowId={hoveredArrowId}
           setHoveredArrowId={setHoveredArrowId}
           nextLevel={nextLevel}
           handleReset={handleReset}
           premoveQueue={premoveQueue}
+          execIndex={execIndex}
           isExecutingPremove={isExecutingPremove}
           executePremove={executePremove}
         />
@@ -1552,7 +1558,7 @@ function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, lab
 }
 
 // Optimized Arrow Icon with memo
-const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
+const ArrowIcon = React.memo(({ arrow, isHovered }: { arrow: ArrowData, isHovered?: boolean }) => {
   const rotation = { up: 0, right: 90, down: 180, left: 270 }[arrow.dir];
   // Arrow colors with higher contrast for high-end look
   const colorClass = {
@@ -1573,7 +1579,7 @@ const ArrowIcon = React.memo(({ arrow }: { arrow: ArrowData }) => {
 
   return (
     <div 
-      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass} group-hover:drop-shadow-[0_0_12px_currentColor]`}
+      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass} ${isHovered ? 'drop-shadow-[0_0_12px_currentColor]' : ''}`}
       style={{ transform: `rotate(${rotation}deg)` }}
     >
       <svg width="75%" height="75%" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">
@@ -1611,10 +1617,12 @@ const GameBoard = React.memo(({
   timedFlavor,
   LEVEL_METADATA,
   handleArrowClick, 
+  hoveredArrowId,
   setHoveredArrowId,
   nextLevel,
   handleReset,
   premoveQueue,
+  execIndex,
   isExecutingPremove,
   executePremove
 }: any) => {
@@ -1639,8 +1647,9 @@ const GameBoard = React.memo(({
     boardRef.current.style.setProperty('--flashlight-opacity', '1');
   };
 
-  const handlePointerLeave = () => {
-    if (isInvisible && boardRef.current) {
+  const handlePointerLeave = (e: React.PointerEvent) => {
+    // Only hide on mouse devices to maintain visibility on last tap point for mobile
+    if (e.pointerType === 'mouse' && isInvisible && boardRef.current) {
       boardRef.current.style.setProperty('--flashlight-x', '-1000px');
       boardRef.current.style.setProperty('--flashlight-y', '-1000px');
     }
@@ -1819,6 +1828,10 @@ const GameBoard = React.memo(({
                 transition={{ type: "spring", stiffness: 400, damping: 25, mass: 0.5 }}
                 whileHover={{ scale: isLocked ? 1 : 1.05 }}
                 whileTap={{ scale: isLocked ? 1 : 0.95 }}
+                onPointerDown={(e) => {
+                  handlePointer(e);
+                  setHoveredArrowId(arrow.id);
+                }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
                 onClick={(e) => {
@@ -1850,7 +1863,10 @@ const GameBoard = React.memo(({
                                    isHinted ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)'
                 }}
               >
-                <ArrowIcon arrow={arrow} />
+                <ArrowIcon 
+                  arrow={arrow} 
+                  isHovered={hoveredArrowId === arrow.id || (isExecutingPremove && premoveQueue[execIndex] === arrow.id)} 
+                />
                 {isQueued && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span className="text-white text-[10px] font-black italic bg-emerald-500 w-5 h-5 rounded-full flex items-center justify-center shadow-lg transform -translate-y-4">
