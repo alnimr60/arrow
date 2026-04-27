@@ -150,14 +150,17 @@ const MenuPreviewBoard = React.memo(({ mode, levelIdx }: { mode: 'standard' | 'i
   );
 });
 
-// HUD Static Components
+const GLOW_STYLE = "shadow-[0_0_15px_rgba(34,211,238,0.2)]";
+const PANEL_STYLE = "bg-[#0f172a]/60 backdrop-blur-xl border border-white/10 rounded-[2.5rem]";
+
+// Simplified HUD Components to minimize re-renders
 const StaticHUD = React.memo(({ gameTitle, systemInfo, isMuted, onToggleMute }: { gameTitle: string, systemInfo: string, isMuted: boolean, onToggleMute: () => void }) => {
   return (
     <>
       <div className="fixed inset-0 pointer-events-none z-50 border-[8px] md:border-[16px] border-black border-opacity-40" />
       <div className="fixed inset-4 md:inset-8 pointer-events-none z-50 border border-white/5 rounded-[2rem]" />
       
-      <div className="fixed top-10 left-10 md:top-14 md:left-14 z-[60] flex flex-col gap-1">
+      <div className="fixed top-8 left-8 md:top-14 md:left-14 z-[60] flex flex-col gap-1">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 bg-[#22d3ee] rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
           <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">{gameTitle}</h1>
@@ -165,23 +168,11 @@ const StaticHUD = React.memo(({ gameTitle, systemInfo, isMuted, onToggleMute }: 
         <div className="text-[9px] text-[#22d3ee] font-black uppercase tracking-[0.4em] opacity-60">{systemInfo}</div>
       </div>
 
-      <div className="fixed bottom-14 left-14 z-[60] hidden md:block">
-        <div className="space-y-1">
-          <div className="text-[8px] font-black uppercase tracking-[0.4em] text-white/20">Operational Status</div>
-          <div className="flex gap-1.5">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className={`w-3 h-1 rounded-full ${i < 4 ? 'bg-[#22d3ee]/40' : 'bg-white/5'}`} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="fixed top-10 right-10 md:top-14 md:right-14 z-[60] flex gap-4 pointer-events-auto">
+      <div className="fixed top-8 right-8 md:top-14 md:right-14 z-[60] pointer-events-auto">
         <button 
           onClick={onToggleMute}
           className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all group"
         >
-          <div className="absolute inset-0 bg-[#22d3ee]/0 group-hover:bg-[#22d3ee]/5 rounded-xl transition-colors" />
           {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
       </div>
@@ -466,24 +457,21 @@ export default function App() {
 
       // Victory check
       if (next.size === arrows.length) {
-        if (gameMode === 'timed') {
-          if (lastScoredTimedLevelRef.current !== timedLevelIdx) {
-            lastScoredTimedLevelRef.current = timedLevelIdx;
-            setTimedScore(s => s + 1);
-            if (!isMuted) soundService.playLevelComplete();
-          }
-          setTimeout(() => {
+          if (gameMode === 'timed') {
+            if (lastScoredTimedLevelRef.current !== timedLevelIdx) {
+              lastScoredTimedLevelRef.current = timedLevelIdx;
+              setTimedScore(s => s + 1);
+              if (!isMuted) soundService.playLevelComplete();
+            }
+            // Transition immediately
             setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
             setTimedLevelIdx(Math.floor(Math.random() * 1000000));
-            setArrows([]);
-            setRemovedIds(new Set());
-          }, 300);
-        } else {
-          setTimeout(() => {
-            if (!isMuted) soundService.playSuccess();
-            setShowVictory(true);
-          }, 200);
-        }
+          } else {
+            setTimeout(() => {
+              if (!isMuted) soundService.playSuccess();
+              setShowVictory(true);
+            }, 200);
+          }
       }
       return next;
     });
@@ -681,17 +669,22 @@ export default function App() {
     if (!isMuted) soundService.playLevelStart();
 
     if (gameMode === 'timed') {
-      // Just regenerate the current board to fix a "stuck" state
-      // Keep timedScore and timeLeft as they are to maintain the challenge
+      // Robust reset for timed mode
       setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
       setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+      // Reset state immediately to prevent ghost levels
+      setArrows([]);
+      setTiles([]);
+      setRemovedIds(new Set());
       setHistory([]);
       setClickCount(0);
-      setRemovedIds(new Set());
       setHintId(null);
       setShowVictory(false);
       setShowGameOver(false);
       setGameOverReason(null);
+      setPremoveQueue([]);
+      setIsExecutingPremove(false);
+      setExecIndex(-1);
       return;
     }
 
@@ -722,6 +715,10 @@ export default function App() {
   const nextLevel = () => {
     if (!isMuted) soundService.playClick();
     if (currentLevelIdx < LEVEL_METADATA.length - 1) {
+      // Clear queue and state immediately to prevent "ghost" executions on next level
+      setPremoveQueue([]);
+      setIsExecutingPremove(false);
+      setExecIndex(-1);
       setCurrentLevelIdx(currentLevelIdx + 1);
     }
   };
@@ -910,7 +907,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-3xl flex items-center justify-center p-6"
+              className="fixed inset-0 z-[100] bg-black/60 md:backdrop-blur-xl flex items-center justify-center p-6"
             >
               <div className="absolute inset-0 bg-[#22d3ee]/5 pointer-events-none" />
               <motion.div 
@@ -1002,7 +999,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] bg-[#000000]/80 backdrop-blur-3xl flex items-center justify-center p-6 overflow-hidden pointer-events-auto"
+              className="fixed inset-0 z-[100] bg-[#000000]/80 md:backdrop-blur-xl flex items-center justify-center p-6 overflow-hidden pointer-events-auto"
             >
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#22d3ee]/5 to-transparent pointer-events-none" />
               
@@ -1637,7 +1634,7 @@ const GameBoard = React.memo(({
           onPointerMove={handlePointer}
           onPointerDown={handlePointer}
           onPointerLeave={handlePointerLeave}
-          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-[0_20px_60px_rgba(0,0,0,1)] md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-xl md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
@@ -1766,7 +1763,7 @@ const GameBoard = React.memo(({
         </AnimatePresence>
 
         {/* Arrows */}
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence>
           {arrows.map((arrow: ArrowData) => {
             if (removedIds.has(arrow.id)) return null;
             
@@ -1783,7 +1780,6 @@ const GameBoard = React.memo(({
             return (
               <motion.button
                 key={arrow.id}
-                layoutId={arrow.id}
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ 
                   scale: 1, 
@@ -1792,13 +1788,12 @@ const GameBoard = React.memo(({
                   filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
                 }}
                 exit={{ 
-                  x: arrow.dir === 'left' ? -500 : arrow.dir === 'right' ? 500 : 0,
-                  y: arrow.dir === 'up' ? -500 : arrow.dir === 'down' ? 500 : 0,
+                  scale: 1.2,
                   opacity: 0,
-                  transition: { duration: 0.2, ease: "circIn" }
+                  transition: { duration: 0.15 }
                 }}
-                whileHover={{ scale: isLocked ? 1 : 1.1, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                whileTap={{ scale: isLocked ? 1 : 0.9 }}
+                whileHover={{ scale: isLocked ? 1 : 1.05 }}
+                whileTap={{ scale: isLocked ? 1 : 0.95 }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
                 onClick={(e) => {
@@ -1808,8 +1803,8 @@ const GameBoard = React.memo(({
                   handleArrowClick(arrow);
                 }}
                 className={`
-                  absolute flex items-center justify-center rounded-lg transition-all duration-300
-                  ${isHinted ? 'shadow-[0_0_20px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
+                  absolute flex items-center justify-center rounded-lg
+                  ${isHinted ? 'shadow-[0_0_15px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
                   ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
                   ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
                   ${arrow.type === 'switch' ? 'shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
