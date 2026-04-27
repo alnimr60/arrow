@@ -725,9 +725,15 @@ export default function App() {
     }
   };
 
+  const lastNextLevelTimeRef = useRef(0);
   const nextLevel = () => {
+    const now = Date.now();
+    if (now - lastNextLevelTimeRef.current < 500) return;
+    lastNextLevelTimeRef.current = now;
+
     if (!isMuted) soundService.playClick();
-    if (currentLevelIdx < LEVEL_METADATA.length - 1) {
+    if (currentLevelIdx < LEVEL_METADATA.length - 1 && showVictory) {
+      setShowVictory(false);
       // Clear queue and state immediately to prevent "ghost" executions on next level
       setPremoveQueue([]);
       setIsExecutingPremove(false);
@@ -1882,7 +1888,8 @@ const GameBoard = React.memo(({
               <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
               <button
                 onClick={currentLevelIdx < LEVEL_METADATA.length - 1 ? nextLevel : handleReset}
-                className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                disabled={!showVictory}
+                className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:grayscale"
               >
                 {currentLevelIdx < LEVEL_METADATA.length - 1 ? 'Next Level' : 'Play Again'}
                 <ChevronRight size={20} />
