@@ -356,6 +356,8 @@ export default function App() {
     setClickCount(0);
     setPremoveQueue([]);
     setIsExecutingPremove(false);
+    setExecIndex(-1);
+    lastExecutedIndexRef.current = -1;
     
     if (gameMode === 'timed') {
       if (timeLeft === null) {
@@ -672,7 +674,7 @@ export default function App() {
       // Robust reset for timed mode
       setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
       setTimedLevelIdx(Math.floor(Math.random() * 1000000));
-      // Reset state immediately to prevent ghost levels
+      // Reset state immediately and clear queue
       setArrows([]);
       setTiles([]);
       setRemovedIds(new Set());
@@ -685,6 +687,16 @@ export default function App() {
       setPremoveQueue([]);
       setIsExecutingPremove(false);
       setExecIndex(-1);
+      lastExecutedIndexRef.current = -1;
+
+      // In TimedResult -> Start, session state needs to be initialized
+      if (currentScreen === 'timedResult') {
+        const totalSecs = timedDuration * 60;
+        setTimeLeft(totalSecs);
+        setTimedTotalSeconds(totalSecs);
+        setTimedScore(0);
+        lastScoredTimedLevelRef.current = null;
+      }
       return;
     }
 
@@ -702,6 +714,7 @@ export default function App() {
     setPremoveQueue([]);
     setIsExecutingPremove(false);
     setExecIndex(-1);
+    lastExecutedIndexRef.current = -1;
   };
 
   const handleHint = () => {
@@ -719,6 +732,7 @@ export default function App() {
       setPremoveQueue([]);
       setIsExecutingPremove(false);
       setExecIndex(-1);
+      lastExecutedIndexRef.current = -1;
       setCurrentLevelIdx(currentLevelIdx + 1);
     }
   };
@@ -1088,12 +1102,7 @@ export default function App() {
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setTimedScore(0);
-                      setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
-                      setTimedLevelIdx(Math.floor(Math.random() * 1000000));
-                      const totalSecs = timedDuration * 60;
-                      setTimeLeft(totalSecs);
-                      setTimedTotalSeconds(totalSecs);
+                      handleReset();
                       setCurrentScreen('game');
                     }}
                     className="flex-1 py-4 md:py-5 bg-[#22d3ee] hover:bg-[#22d3ee]/80 text-black text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] shadow-[0_0_30px_rgba(34,211,238,0.15)] transition-all rounded-3xl relative z-[110]"
@@ -1763,7 +1772,7 @@ const GameBoard = React.memo(({
         </AnimatePresence>
 
         {/* Arrows */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {arrows.map((arrow: ArrowData) => {
             if (removedIds.has(arrow.id)) return null;
             
@@ -1780,6 +1789,7 @@ const GameBoard = React.memo(({
             return (
               <motion.button
                 key={arrow.id}
+                layout="position"
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ 
                   scale: 1, 
@@ -1788,10 +1798,10 @@ const GameBoard = React.memo(({
                   filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
                 }}
                 exit={{ 
-                  scale: 1.2,
                   opacity: 0,
-                  transition: { duration: 0.15 }
+                  transition: { duration: 0.05 }
                 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25, mass: 0.5 }}
                 whileHover={{ scale: isLocked ? 1 : 1.05 }}
                 whileTap={{ scale: isLocked ? 1 : 0.95 }}
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}

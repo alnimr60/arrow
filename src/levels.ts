@@ -38,28 +38,77 @@ function isPathBlocked(arrow: { x: number, y: number, dir: Direction }, others: 
  * Forward Solver to verify if a level is solvable.
  */
 function isSolvable(level: Level): boolean {
+  let nodes = 0;
+  const MAX_NODES = 800; // Hard limit to prevent browser hang
+
   const solver = (arrows: ArrowData[], removedIds: Set<string>, tiles: TileData[], depth = 0): boolean => {
+    nodes++;
+    if (nodes > MAX_NODES) return false;
     if (removedIds.size === arrows.length) return true;
     if (depth > 200) return false;
 
-    const remaining = arrows.filter(a => !removedIds.has(a.id));
-    const canBeRemoved = remaining.filter(a => {
-      if (a.type === 'locked' && remaining.some(k => k.type === 'key')) return false;
-      return !isPathBlocked(a, remaining.filter(o => o.id !== a.id), tiles);
-    });
+    const remaining = [];
+    let hasKey = false;
+    for (let i = 0; i < arrows.length; i++) {
+      if (!removedIds.has(arrows[i].id)) {
+        remaining.push(arrows[i]);
+        if (arrows[i].type === 'key') hasKey = true;
+      }
+    }
 
+    const canBeRemoved = [];
+    for (let i = 0; i < remaining.length; i++) {
+      const a = remaining[i];
+      if (a.type === 'locked' && hasKey) continue;
+      
+      // Inline check for speed
+      let blocked = false;
+      for (let j = 0; j < remaining.length; j++) {
+        const other = remaining[j];
+        if (a.id === other.id) continue;
+        if (a.dir === 'up' && other.x === a.x && other.y < a.y) { blocked = true; break; }
+        if (a.dir === 'down' && other.x === a.x && other.y > a.y) { blocked = true; break; }
+        if (a.dir === 'left' && other.y === a.y && other.x < a.x) { blocked = true; break; }
+        if (a.dir === 'right' && other.y === a.y && other.x > a.x) { blocked = true; break; }
+      }
+      if (blocked) continue;
+
+      // Check tiles
+      if (tiles && tiles.length > 0) {
+        for (let j = 0; j < tiles.length; j++) {
+           const t = tiles[j];
+           if (t.isOpen || !t.type.startsWith('gate')) continue;
+           if (a.dir === 'up' && t.x === a.x && t.y < a.y) { blocked = true; break; }
+           if (a.dir === 'down' && t.x === a.x && t.y > a.y) { blocked = true; break; }
+           if (a.dir === 'left' && t.y === a.y && t.x < a.x) { blocked = true; break; }
+           if (a.dir === 'right' && t.y === a.y && t.x > a.x) { blocked = true; break; }
+        }
+      }
+
+      if (!blocked) canBeRemoved.push(a);
+    }
+
+    // Strategy: Try arrows that set off more chain reactions first or just the first few
+    // To keep it fast, we don't sort here, but we could.
     for (const arrow of canBeRemoved) {
       const nextRemoved = new Set(removedIds);
       nextRemoved.add(arrow.id);
-      let nextArrows = [...arrows];
-      let nextTiles = [...tiles];
-      if (arrow.type === 'switch') nextTiles = nextTiles.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t));
+      
+      let nextArrows = arrows;
+      let nextTiles = tiles;
+
+      // Only clone if the arrow actually affects state
+      if (arrow.type === 'switch') {
+        nextTiles = tiles.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t));
+      }
+      
       if (arrow.type === 'rotator') {
         const rotateCW = (d: Direction): Direction => ({ up: 'right', right: 'down', down: 'left', left: 'up' } as Record<Direction, Direction>)[d];
-        nextArrows = nextArrows.map(a => (Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1 && !nextRemoved.has(a.id)) ? { ...a, dir: rotateCW(a.dir) } : a);
+        nextArrows = arrows.map(a => (Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1 && !nextRemoved.has(a.id)) ? { ...a, dir: rotateCW(a.dir) } : a);
       }
+
       if (arrow.type === 'shifter') {
-        nextArrows = nextArrows.map(a => {
+        nextArrows = arrows.map(a => {
           if (nextRemoved.has(a.id) || a.id === arrow.id) return a;
           const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
           const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
@@ -76,7 +125,9 @@ function isSolvable(level: Level): boolean {
           return a;
         });
       }
+
       if (solver(nextArrows, nextRemoved, nextTiles, depth + 1)) return true;
+      if (nodes > MAX_NODES) return false;
     }
     return false;
   };
@@ -127,8 +178,7 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
   if (virtualIdx > 50) gridSize = 6;
   if (virtualIdx > 120) gridSize = 7;
   if (virtualIdx > 220) gridSize = 8;
-  if (virtualIdx > 351) gridSize = 9;
-  if (virtualIdx > 480) gridSize = 10;
+  // Cap at 8 for performance stability in browser
 
   // Strategy Selection
   const strategies: GenerationStrategy[] = ['Critical Chain', 'Dependency Web', 'Sparse but Critical', 'Clustered Challenge'];
@@ -144,8 +194,12 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
   const targetCount = Math.floor(gridSize * gridSize * Math.min(0.8, densityMultiplier));
 
   let attempts = 0;
-  while (attempts < 60) {
+  const startTime = Date.now();
+  
+  while (attempts < 40) {
     attempts++;
+    // Global time limit for generation to prevent browser hang
+    if (Date.now() - startTime > 1500) break; 
     let arrows: ArrowData[] = [];
     let tiles: TileData[] = [];
     const occupied = new Set<string>();
