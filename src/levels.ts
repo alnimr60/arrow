@@ -38,118 +38,51 @@ function isPathBlocked(arrow: { x: number, y: number, dir: Direction }, others: 
  * Forward Solver to verify if a level is solvable.
  */
 function isSolvable(level: Level): boolean {
-  let removedIds = new Set<string>();
-  let currentTiles = level.tiles ? [...level.tiles] : [];
+  const solver = (arrows: ArrowData[], removedIds: Set<string>, tiles: TileData[], depth = 0): boolean => {
+    if (removedIds.size === arrows.length) return true;
+    if (depth > 200) return false;
 
-  const canRemove = (arrow: ArrowData, remaining: ArrowData[], tiles: TileData[]): boolean => {
-    // Lock logic
-    if (arrow.type === 'locked') {
-      if ((remaining || []).some(a => a.type === 'key')) return false;
-    }
+    const remaining = arrows.filter(a => !removedIds.has(a.id));
+    const canBeRemoved = remaining.filter(a => {
+      if (a.type === 'locked' && remaining.some(k => k.type === 'key')) return false;
+      return !isPathBlocked(a, remaining.filter(o => o.id !== a.id), tiles);
+    });
 
-    // Path logic
-    const { x, y, dir } = arrow;
-    const others = remaining.filter(a => a.id !== arrow.id);
-    return !isPathBlocked({ x, y, dir }, others, tiles);
-  };
-
-  const getNextState = (state: ArrowData[], removed: Set<string>, tiles: TileData[]): { newState: ArrowData[], newTiles: TileData[] } | null => {
-    const nextRemoved = state.find(a => !removed.has(a.id) && canRemove(a, state.filter(s => !removed.has(s.id)), tiles));
-    if (!nextRemoved) return null;
-    
-    removed.add(nextRemoved.id);
-    let newState = [...state];
-    let newTiles = [...tiles];
-    
-    // Process effects
-    if (nextRemoved.type === 'switch') {
-      newTiles = newTiles.map(t => ({ ...t, isOpen: !t.isOpen }));
-    }
-
-    if (nextRemoved.type === 'rotator') {
-      const rotateCW = (d: Direction): Direction => ({ up: 'right', right: 'down', down: 'left', left: 'up' } as Record<Direction, Direction>)[d];
-      newState = newState.map(a => {
-        if (removed.has(a.id)) return a;
-        if (Math.abs(a.x - nextRemoved.x) + Math.abs(a.y - nextRemoved.y) === 1) {
-          return { ...a, dir: rotateCW(a.dir) };
-        }
-        return a;
-      });
-    }
-
-    if (nextRemoved.type === 'shifter') {
-      newState = newState.map(a => {
-        if (removed.has(a.id)) return a;
-        const isSameCol = a.x === nextRemoved.x && (nextRemoved.dir === 'up' || nextRemoved.dir === 'down');
-        const isSameRow = a.y === nextRemoved.y && (nextRemoved.dir === 'left' || nextRemoved.dir === 'right');
-        if (isSameCol || isSameRow) {
-          let nx = a.x, ny = a.y;
-          if (nextRemoved.dir === 'up') ny--;
-          if (nextRemoved.dir === 'down') ny++;
-          if (nextRemoved.dir === 'left') nx--;
-          if (nextRemoved.dir === 'right') nx++;
-          
-          // Safe Conveyor logic: Iterative to prevent stack overflow
-          const getFinalPlatformPos = (startX: number, startY: number): { x: number, y: number } => {
-            let cx = startX, cy = startY;
-            const visited = new Set<string>();
-            visited.add(`${cx},${cy}`);
-
-            while (true) {
-              const tile = newTiles.find(t => t.x === cx && t.y === cy);
-              if (!tile) break;
-
-              let fx = cx, fy = cy;
-              if (tile.type === 'conveyor-up') fy--;
-              if (tile.type === 'conveyor-down') fy++;
-              if (tile.type === 'conveyor-left') fx--;
-              if (tile.type === 'conveyor-right') fx++;
-
-              // Bound check
-              if (fx < 0 || fx >= level.gridSize || fy < 0 || fy >= level.gridSize) break;
-              
-              // Blocked check
-              const blocked = (newState || []).some(other => !removed.has(other.id) && other.x === fx && other.y === fy) ||
-                            (newTiles || []).some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === fx && t.y === fy);
-              if (blocked) break;
-
-              // Cycle check
-              if (visited.has(`${fx},${fy}`)) break;
-
-              cx = fx;
-              cy = fy;
-              visited.add(`${cx},${cy}`);
+    for (const arrow of canBeRemoved) {
+      const nextRemoved = new Set(removedIds);
+      nextRemoved.add(arrow.id);
+      let nextArrows = [...arrows];
+      let nextTiles = [...tiles];
+      if (arrow.type === 'switch') nextTiles = nextTiles.map(t => (t.type.startsWith('gate') ? { ...t, isOpen: !t.isOpen } : t));
+      if (arrow.type === 'rotator') {
+        const rotateCW = (d: Direction): Direction => ({ up: 'right', right: 'down', down: 'left', left: 'up' } as Record<Direction, Direction>)[d];
+        nextArrows = nextArrows.map(a => (Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1 && !nextRemoved.has(a.id)) ? { ...a, dir: rotateCW(a.dir) } : a);
+      }
+      if (arrow.type === 'shifter') {
+        nextArrows = nextArrows.map(a => {
+          if (nextRemoved.has(a.id) || a.id === arrow.id) return a;
+          const isSameCol = a.x === arrow.x && (arrow.dir === 'up' || arrow.dir === 'down');
+          const isSameRow = a.y === arrow.y && (arrow.dir === 'left' || arrow.dir === 'right');
+          if (isSameCol || isSameRow) {
+            let nx = a.x, ny = a.y;
+            if (arrow.dir === 'up') ny--; if (arrow.dir === 'down') ny++;
+            if (arrow.dir === 'left') nx--; if (arrow.dir === 'right') nx++;
+            if (nx >= 0 && nx < level.gridSize && ny >= 0 && ny < level.gridSize) {
+              const blocked = nextArrows.some(o => !nextRemoved.has(o.id) && o.id !== a.id && o.id !== arrow.id && o.x === nx && o.y === ny) ||
+                              nextTiles.some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
+              if (!blocked) return { ...a, x: nx, y: ny };
             }
-            return { x: cx, y: cy };
-          };
-
-          if (nx >= 0 && nx < level.gridSize && ny >= 0 && ny < level.gridSize) {
-             const occupied = (newState || []).some(other => !removed.has(other.id) && other.x === nx && other.y === ny) ||
-                              (newTiles || []).some(t => !t.isOpen && (t.type === 'gate-vertical' || t.type === 'gate-horizontal') && t.x === nx && t.y === ny);
-             if (!occupied) {
-                const finalPos = getFinalPlatformPos(nx, ny);
-                return { ...a, x: finalPos.x, y: finalPos.y };
-             }
           }
-        }
-        return a;
-      });
+          return a;
+        });
+      }
+      if (solver(nextArrows, nextRemoved, nextTiles, depth + 1)) return true;
     }
-    return { newState, newTiles };
+    return false;
   };
-
-  let state = [...level.arrows];
-  let iterations = 0;
-  while (removedIds.size < level.arrows.length && iterations < 1000) {
-    const result = getNextState(state, removedIds, currentTiles);
-    if (!result) break;
-    state = result.newState;
-    currentTiles = result.newTiles;
-    iterations++;
-  }
-
-  return removedIds.size === level.arrows.length;
+  return solver(level.arrows, new Set(), level.tiles || []);
 }
+
 
 /**
  * Seeded PRNG to ensure levels are consistent across sessions but diverse across indices.
@@ -380,7 +313,7 @@ export function generateProceduralLevel(levelIdx: number, mode: 'standard' | 'in
       toolbox,
       strategy,
       // TIGHTER LIMITS: Force perfect play
-      clickLimit: Math.floor(arrows.length * (isElite ? 1.02 : 1.15)) + (toolbox?.rotations || 0) + (toolbox?.shifts || 0),
+      clickLimit: isRandomDifficulty ? undefined : Math.floor(arrows.length * (isElite ? 1.02 : 1.15)) + (toolbox?.rotations || 0) + (toolbox?.shifts || 0),
       timeLimit: isBlitz ? Math.max(12, arrows.length * 1.1) : Math.max(30, arrows.length * 3)
     };
 

@@ -40,21 +40,31 @@ import { soundService } from './services/soundService';
  * A logic game where you untangle arrows by removing them in the correct order.
  */
 
-// Noise Overlay for technical texture
-const NoiseOverlay = () => (
-  <div className="fixed inset-0 z-[100] pointer-events-none opacity-[0.03] mix-blend-overlay">
-    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-      <filter id="noise">
-        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
-        <feColorMatrix type="saturate" values="0" />
-      </filter>
-      <rect width="100%" height="100%" filter="url(#noise)" />
-    </svg>
-  </div>
-);
+// Noise Overlay for technical texture - Simplified for performance
+const NoiseOverlay = React.memo(() => {
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+  }, []);
 
-// Realistic Menu Previews
-const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', levelIdx: number }) => {
+  if (isMobile) return null; // Disable filter on mobile for better FPS
+
+  return (
+    <div className="fixed inset-0 z-[100] pointer-events-none opacity-[0.03] mix-blend-overlay">
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <filter id="noise">
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+          <feColorMatrix type="saturate" values="0" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#noise)" />
+      </svg>
+    </div>
+  );
+});
+
+// Realistic Menu Previews - Memoized to prevent re-renders
+const MenuPreviewBoard = React.memo(({ mode, levelIdx }: { mode: 'standard' | 'invisible', levelIdx: number }) => {
   const level = useMemo(() => getLevel(levelIdx, mode), [levelIdx, mode]);
   const [pointerPos, setPointerPos] = useState({ x: 150, y: 150 });
   const boardRef = useRef<HTMLDivElement>(null);
@@ -138,7 +148,62 @@ const MenuPreviewBoard = ({ mode, levelIdx }: { mode: 'standard' | 'invisible', 
       </div>
     </div>
   );
-};
+});
+
+// HUD Static Components
+const StaticHUD = React.memo(({ gameTitle, systemInfo, isMuted, onToggleMute }: { gameTitle: string, systemInfo: string, isMuted: boolean, onToggleMute: () => void }) => {
+  return (
+    <>
+      <div className="fixed inset-0 pointer-events-none z-50 border-[8px] md:border-[16px] border-black border-opacity-40" />
+      <div className="fixed inset-4 md:inset-8 pointer-events-none z-50 border border-white/5 rounded-[2rem]" />
+      
+      <div className="fixed top-10 left-10 md:top-14 md:left-14 z-[60] flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 bg-[#22d3ee] rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
+          <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">{gameTitle}</h1>
+        </div>
+        <div className="text-[9px] text-[#22d3ee] font-black uppercase tracking-[0.4em] opacity-60">{systemInfo}</div>
+      </div>
+
+      <div className="fixed bottom-14 left-14 z-[60] hidden md:block">
+        <div className="space-y-1">
+          <div className="text-[8px] font-black uppercase tracking-[0.4em] text-white/20">Operational Status</div>
+          <div className="flex gap-1.5">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className={`w-3 h-1 rounded-full ${i < 4 ? 'bg-[#22d3ee]/40' : 'bg-white/5'}`} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="fixed top-10 right-10 md:top-14 md:right-14 z-[60] flex gap-4 pointer-events-auto">
+        <button 
+          onClick={onToggleMute}
+          className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all group"
+        >
+          <div className="absolute inset-0 bg-[#22d3ee]/0 group-hover:bg-[#22d3ee]/5 rounded-xl transition-colors" />
+          {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
+      </div>
+    </>
+  );
+});
+
+// Memoized Time Display to isolate timer re-renders
+const TimeDisplay = React.memo(({ timeLeft }: { timeLeft: number | null }) => {
+  if (timeLeft === null) return <span className="text-white">--:--</span>;
+  
+  const mins = Math.floor(timeLeft / 60);
+  const secs = Math.floor(timeLeft % 60);
+  const ms = Math.floor((timeLeft % 1) * 10);
+  
+  return (
+    <span className="flex items-baseline gap-0.5 text-white">
+      {mins}:{secs.toString().padStart(2, '0')}
+      <span className="text-[12px] opacity-40 font-bold">.{ms}</span>
+    </span>
+  );
+});
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'menu' | 'game' | 'timedConfig' | 'timedResult'>('menu');
@@ -528,14 +593,14 @@ export default function App() {
     
     const timer = setTimeout(() => {
       setExecIndex(prev => prev + 1);
-    }, 200); 
+    }, 120); 
 
     return () => clearTimeout(timer);
   }, [isExecutingPremove, execIndex, premoveQueue]);
 
   const handleArrowClick = useCallback((arrow: ArrowData) => {
     const now = Date.now();
-    if (now - lastClickTimeRef.current < 250) return;
+    if (now - lastClickTimeRef.current < 100) return;
     lastClickTimeRef.current = now;
 
     if (removedIds.has(arrow.id) || showVictory || showGameOver || isExecutingPremove) return;
@@ -560,7 +625,7 @@ export default function App() {
       
       setClickCount(prev => {
         const next = prev + 1;
-        if (currentLevel.clickLimit && next >= currentLevel.clickLimit) {
+        if (gameMode !== 'timed' && gameMode !== 'premove' && currentLevel.clickLimit && next >= currentLevel.clickLimit) {
           setGameOverReason('clicks');
           setShowGameOver(true);
           if (!isMuted) soundService.playError();
@@ -691,39 +756,12 @@ export default function App() {
       <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-[#22d3ee]/30 perspective-[2000px]">
         <NoiseOverlay />
         
-        {/* Technical HUD Frame - Softened */}
-        <div className="fixed inset-0 pointer-events-none z-50 border-[8px] md:border-[16px] border-black border-opacity-40" />
-        <div className="fixed inset-4 md:inset-8 pointer-events-none z-50 border border-white/5 rounded-[2rem]" />
-        
-        {/* HUD Elements */}
-        <div className="fixed top-10 left-10 md:top-14 md:left-14 z-[60] flex flex-col gap-1">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 bg-[#22d3ee] rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
-            <h1 className="text-xl font-black italic uppercase tracking-tighter text-white/90">ARROW ESCAPE</h1>
-          </div>
-          <div className="text-[9px] text-[#22d3ee] font-black uppercase tracking-[0.4em] opacity-60">System Core 4.3 // Optimal</div>
-        </div>
-
-        <div className="fixed bottom-14 left-14 z-[60] hidden md:block">
-          <div className="space-y-1">
-            <div className="text-[8px] font-black uppercase tracking-[0.4em] text-white/20">Operational Status</div>
-            <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className={`w-3 h-1 rounded-full ${i < 4 ? 'bg-[#22d3ee]/40' : 'bg-white/5'}`} />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="fixed top-10 right-10 md:top-14 md:right-14 z-[60] flex gap-4 pointer-events-auto">
-          <button 
-            onClick={() => setIsMuted(!isMuted)}
-            className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all group"
-          >
-            <div className="absolute inset-0 bg-[#22d3ee]/0 group-hover:bg-[#22d3ee]/5 rounded-xl transition-colors" />
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </button>
-        </div>
+        <StaticHUD 
+          gameTitle="ARROW ESCAPE"
+          systemInfo="System Core 4.3 // Optimal"
+          isMuted={isMuted}
+          onToggleMute={() => setIsMuted(prev => !prev)}
+        />
 
         {/* Main Content: 3D Mode Gallery */}
         <div className="flex flex-wrap w-full max-w-7xl h-full items-center justify-center gap-4 md:gap-6 px-6 md:px-12 relative z-10 pt-24 pb-12 md:pt-0">
@@ -1370,12 +1408,7 @@ export default function App() {
                     Time
                   </div>
                   <div className={`text-2xl font-black tabular-nums transition-all ${timeLeft !== null && timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                    {timeLeft === null ? '--:--' : (
-                      <span className="flex items-baseline gap-0.5">
-                        {Math.floor(timeLeft / 60)}:{Math.floor(timeLeft % 60).toString().padStart(2, '0')}
-                        <span className="text-[12px] opacity-40 font-bold">.{Math.floor((timeLeft % 1) * 10)}</span>
-                      </span>
-                    )}
+                    <TimeDisplay timeLeft={timeLeft} />
                   </div>
                 </div>
               </div>
@@ -1426,33 +1459,24 @@ export default function App() {
                 </button>
               </div>
 
-                  <div className="flex-1 overflow-y-auto px-2 scrollbar-hide grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3 pb-8">
+                  <div className="flex-1 overflow-y-auto px-2 scrollbar-hide grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2 pb-8">
                   {LEVEL_METADATA.map((meta, idx) => (
                     <button
                       key={idx}
                       ref={currentLevelIdx === idx ? activeLevelRef : null}
                       onClick={() => selectLevel(idx)}
                       className={`
-                        aspect-square rounded-2xl flex flex-col items-center justify-center relative transition-all group
+                        aspect-square rounded-xl flex flex-col items-center justify-center relative transition-all
                         ${currentLevelIdx === idx 
-                          ? 'bg-gradient-to-br from-[#22d3ee] to-[#818cf8] text-[#0f172a] scale-110 shadow-xl shadow-cyan-900/40' 
+                          ? 'bg-cyan-500 text-black scale-105 shadow-lg shadow-cyan-900/20' 
                           : idx < maxReachedLevel
-                            ? 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20'
-                            : 'bg-slate-800/50 border border-white/5 hover:border-[#22d3ee]/50'}
+                            ? 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400'
+                            : 'bg-slate-800/40 border border-white/5 text-slate-500 hover:border-white/20'}
                       `}
                     >
-                      <span className="text-lg font-black">{idx + 1}</span>
-                      <span className="text-[8px] uppercase tracking-tighter opacity-70 group-hover:opacity-100">{meta.gridSize}x{meta.gridSize}</span>
-                      {idx > maxReachedLevel + 5 && (
-                        <div className="absolute top-1 right-1 opacity-40">
-                          <Lock size={8} />
-                        </div>
-                      )}
-                      {idx < maxReachedLevel && (
-                        <div className="absolute top-1 right-1 text-indigo-400/60">
-                          <CheckCircle2 size={10} />
-                        </div>
-                      )}
+                      <span className="text-sm font-bold">{idx + 1}</span>
+                      {idx > maxReachedLevel + 5 && <Lock size={8} className="absolute top-1 right-1 opacity-30" />}
+                      {idx <= maxReachedLevel && idx !== currentLevelIdx && <CheckCircle2 size={8} className="absolute top-1 right-1 text-indigo-400/40" />}
                     </button>
                 ))}
               </div>
@@ -1582,22 +1606,22 @@ const GameBoard = React.memo(({
   isExecutingPremove,
   executePremove
 }: any) => {
-  const [pointerPos, setPointerPos] = useState({ x: -1000, y: -1000 });
   const boardRef = useRef<HTMLDivElement>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
 
   const handlePointer = (e: React.PointerEvent) => {
     if (!isInvisible || !boardRef.current) return;
     const rect = boardRef.current.getBoundingClientRect();
-    setPointerPos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    boardRef.current.style.setProperty('--flashlight-x', `${x}px`);
+    boardRef.current.style.setProperty('--flashlight-y', `${y}px`);
+    boardRef.current.style.setProperty('--flashlight-opacity', '1');
   };
 
   const handlePointerLeave = () => {
-    if (isInvisible) {
-      setPointerPos({ x: -1000, y: -1000 });
+    if (isInvisible && boardRef.current) {
+      boardRef.current.style.setProperty('--flashlight-opacity', '0');
     }
   };
 
@@ -1613,7 +1637,7 @@ const GameBoard = React.memo(({
           onPointerMove={handlePointer}
           onPointerDown={handlePointer}
           onPointerLeave={handlePointerLeave}
-          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-[0_20px_60px_rgba(0,0,0,1)] md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
@@ -1621,18 +1645,23 @@ const GameBoard = React.memo(({
             gap: '8px',
             width: 'min(90vw, 480px)',
             height: 'min(90vw, 480px)',
-            cursor: isInvisible ? 'none' : 'default'
+            cursor: isInvisible ? 'none' : 'default',
+            // Default flashlight values
+            ['--flashlight-x' as any]: '-1000px',
+            ['--flashlight-y' as any]: '-1000px',
+            ['--flashlight-opacity' as any]: '0'
           }}
         >
           {/* Internal Board Ambient Glow */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] pointer-events-none z-0" />
 
-          {/* Dark Overlay for Invisible Mode */}
+          {/* Dark Overlay for Invisible Mode - Optimized with CSS variables */}
           {isInvisible && (
             <div 
-              className="absolute inset-0 z-20 pointer-events-none"
+              className="absolute inset-0 z-20 pointer-events-none transition-opacity duration-300"
               style={{
-                background: `radial-gradient(circle 100px at ${pointerPos.x}px ${pointerPos.y}px, transparent 0%, rgba(2, 6, 23, 1) 100%)`
+                background: `radial-gradient(circle 100px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
+                opacity: 'var(--flashlight-opacity)'
               }}
             />
           )}
