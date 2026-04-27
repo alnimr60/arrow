@@ -374,7 +374,7 @@ export default function App() {
     
     if (!isMuted) soundService.playLevelStart();
     localStorage.setItem('arrow-escape-level', currentLevelIdx.toString());
-  }, [currentLevelIdx, currentLevel, gameMode, timedDuration, isMuted]);
+  }, [currentLevelIdx, currentLevel, gameMode, timedDuration]);
 
   const hasKeys = useMemo(() => {
     return (arrows || []).some(a => !removedIds.has(a.id) && a.type === 'key');
