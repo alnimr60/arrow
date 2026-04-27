@@ -1615,6 +1615,14 @@ const GameBoard = React.memo(({
   const boardRef = useRef<HTMLDivElement>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
 
+  useEffect(() => {
+    if (boardRef.current && isInvisible) {
+      boardRef.current.style.setProperty('--flashlight-x', '-1000px');
+      boardRef.current.style.setProperty('--flashlight-y', '-1000px');
+      boardRef.current.style.setProperty('--flashlight-opacity', '1');
+    }
+  }, [currentLevel, isInvisible]);
+
   const handlePointer = (e: React.PointerEvent) => {
     if (!isInvisible || !boardRef.current) return;
     const rect = boardRef.current.getBoundingClientRect();
@@ -1627,7 +1635,8 @@ const GameBoard = React.memo(({
 
   const handlePointerLeave = () => {
     if (isInvisible && boardRef.current) {
-      boardRef.current.style.setProperty('--flashlight-opacity', '0');
+      boardRef.current.style.setProperty('--flashlight-x', '-1000px');
+      boardRef.current.style.setProperty('--flashlight-y', '-1000px');
     }
   };
 
@@ -1655,7 +1664,7 @@ const GameBoard = React.memo(({
             // Default flashlight values
             ['--flashlight-x' as any]: '-1000px',
             ['--flashlight-y' as any]: '-1000px',
-            ['--flashlight-opacity' as any]: '0'
+            ['--flashlight-opacity' as any]: '1'
           }}
         >
           {/* Internal Board Ambient Glow */}
@@ -1666,7 +1675,7 @@ const GameBoard = React.memo(({
             <div 
               className="absolute inset-0 z-20 pointer-events-none transition-opacity duration-300"
               style={{
-                background: `radial-gradient(circle 100px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
+                background: `radial-gradient(circle 85px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
                 opacity: 'var(--flashlight-opacity)'
               }}
             />
