@@ -1260,73 +1260,10 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full">
-        {/* Left Sidebar */}
-        <aside className="flex flex-col gap-5 order-2 lg:order-1">
-          {gameMode === 'timed' && (
-             <div className="glass-panel rounded-[20px] p-6 border-amber-500/30">
-                <div className="text-[10px] font-black text-amber-500 uppercase tracking-[0.4em] mb-2">Timed Session</div>
-                <div className="text-5xl font-black italic text-white flex items-baseline gap-2">
-                   {timedScore}
-                   <span className="text-xs uppercase tracking-tighter text-slate-500 not-italic">Stages</span>
-                </div>
-             </div>
-          )}
-          <div className="glass-panel rounded-[20px] p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="inline-block px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-xs font-bold uppercase tracking-wider">
-                {gameMode === 'timed' ? 'PROCEDURAL' : `Stage ${currentLevelIdx + 1}`}
-              </span>
-              {currentLevel.strategy && (
-                <span className="text-[10px] font-black text-[#818cf8] uppercase tracking-tighter opacity-80">
-                  {currentLevel.strategy}
-                </span>
-              )}
-            </div>
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-widest mb-2">Core Logic</h3>
-                <p className="text-sm text-[#94a3b8] leading-relaxed">
-                  An arrow can only launch if its path is clear.
-                </p>
-              </div>
-
-              {(arrows || []).some(a => a.type === 'rotator' || a.type === 'key' || a.type === 'shifter') && (
-                <div className="pt-4 border-t border-white/5 space-y-3">
-                  <h3 className="text-xs font-bold text-[#22d3ee] uppercase tracking-widest mb-2">Dynamic Objects</h3>
-                  
-                  {(arrows || []).some(a => a.type === 'rotator') && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                         <RotateCcw size={10} className="text-purple-400" />
-                      </div>
-                      <p className="text-[11px] text-[#94a3b8]"><b>Rotator:</b> Rotates adjacent arrows 90° on exit.</p>
-                    </div>
-                  )}
-
-                  {(arrows || []).some(a => a.type === 'key') && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                         <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
-                      </div>
-                      <p className="text-[11px] text-[#94a3b8]"><b>Key:</b> Remove to unlock chained arrows.</p>
-                    </div>
-                  )}
-
-                  {(arrows || []).some(a => a.type === 'shifter') && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                         <Move size={10} className="text-cyan-400" />
-                      </div>
-                      <p className="text-[11px] text-[#94a3b8]"><b>Shifter:</b> Shifts its row/column on exit.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
+        {/* Left Sidebar (Mission History & Archive) */}
+        <aside className="flex flex-col gap-5 order-3 lg:order-1">
           {gameMode !== 'timed' && (
-            <div className="glass-panel rounded-[2rem] p-8 border border-white/5 shadow-xl">
+            <div className="glass-panel hidden lg:block rounded-[2rem] p-8 border border-white/5 shadow-xl">
               <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest mb-4 font-semibold">Stage Archive</div>
               <button 
                 onClick={() => setShowLevelSelector(true)}
@@ -1360,7 +1297,7 @@ export default function App() {
           )}
         </aside>
 
-        {/* Center: Game Board - Extracted and Memoized */}
+        {/* Center: Game Board */}
         <GameBoard 
           currentLevel={currentLevel}
           tiles={tiles}
@@ -1389,8 +1326,9 @@ export default function App() {
           executePremove={executePremove}
         />
 
-        {/* Right Sidebar */ }
-        <aside className="flex flex-col gap-6 overflow-hidden order-3 lg:order-3">
+        {/* Right Sidebar (Active Controls & Logic) */}
+        <aside className="flex flex-col gap-6 overflow-hidden order-2 lg:order-3">
+          {/* Tactical Controls */}
           <div className="glass-panel rounded-[2rem] p-8 border border-white/5 shadow-xl flex flex-col gap-6">
             <div className="flex flex-col gap-4">
               <h3 className="text-[10px] font-black text-[#818cf8] uppercase tracking-[0.2em] px-1">Tactical Operations</h3>
@@ -1451,7 +1389,6 @@ export default function App() {
 
             <div className="space-y-4 pt-5 border-t border-white/5">
               <div className="text-[10px] uppercase text-[#94a3b8] tracking-widest font-bold px-1">Mission Telemetry</div>
-              
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1 group/stat">
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] group-hover/stat:text-indigo-400 transition-colors">
@@ -1473,7 +1410,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold px-1">
                   <span>Clearing Progress</span>
@@ -1486,6 +1423,65 @@ export default function App() {
                     className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500"
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Logic & Score Overlay Info */}
+          <div className="flex flex-col gap-5">
+            {gameMode === 'timed' && (
+              <div className="glass-panel rounded-[20px] p-6 border-amber-500/30">
+                <div className="text-[10px] font-black text-amber-500 uppercase tracking-[0.4em] mb-2">Timed Session</div>
+                <div className="text-5xl font-black italic text-white flex items-baseline gap-2">
+                  {timedScore}
+                  <span className="text-xs uppercase tracking-tighter text-slate-500 not-italic">Stages</span>
+                </div>
+              </div>
+            )}
+
+            <div className="glass-panel rounded-[20px] p-6 border border-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <span className="inline-flex px-3 py-1 bg-[#22d3ee]/10 text-[#22d3ee] rounded-full text-[9px] font-black uppercase tracking-wider">
+                  {gameMode === 'timed' ? 'PROCEDURAL' : `STAGE ${currentLevelIdx + 1}`}
+                </span>
+                <h3 className="text-[10px] font-black text-[#22d3ee] uppercase tracking-[0.2em]">Dependency Web</h3>
+              </div>
+              
+              <div className="space-y-4">
+                <p className="text-[11px] text-[#94a3b8] leading-relaxed">
+                  <span className="text-white font-bold opacity-80 underline decoration-[#22d3ee]/30 underline-offset-2">Logic:</span> Arrows require an unobstructed vector for successful departure.
+                </p>
+
+                {(arrows || []).some(a => a.type === 'rotator' || a.type === 'key' || a.type === 'shifter') && (
+                  <div className="pt-4 border-t border-white/5 space-y-3">
+                    {(arrows || []).some(a => a.type === 'rotator') && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <RotateCcw size={10} className="text-purple-400" />
+                        </div>
+                        <p className="text-[11px] text-[#94a3b8]"><b>Rotator:</b> Adjusts adjacent vectors on exit.</p>
+                      </div>
+                    )}
+
+                    {(arrows || []).some(a => a.type === 'key') && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
+                        </div>
+                        <p className="text-[11px] text-[#94a3b8]"><b>Encoder:</b> Vital for decrypting locked chains.</p>
+                      </div>
+                    )}
+
+                    {(arrows || []).some(a => a.type === 'shifter') && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <Move size={10} className="text-cyan-400" />
+                        </div>
+                        <p className="text-[11px] text-[#94a3b8]"><b>Shifter:</b> Axis redistribution protocol.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
