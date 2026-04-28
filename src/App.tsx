@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   X,
   Lock,
+  Key,
   Move,
   Volume2,
   VolumeX,
@@ -314,6 +315,37 @@ export default function App() {
     }
   }, [currentLevelIdx, maxReachedLevel]);
 
+  // Scroll to top and lock scroll on screens (Important for mobile UX)
+  useEffect(() => {
+    // Scroll to top immediately on screen change
+    window.scrollTo(0, 0);
+    document.body.scrollTo(0, 0);
+    document.documentElement.scrollTo(0, 0);
+
+    // Handle scroll locking for overlays
+    const isOverlayActive = currentScreen === 'timedConfig' || currentScreen === 'timedResult';
+    
+    if (isOverlayActive) {
+      // Save current scroll and lock
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none'; 
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    }
+
+    // Secondary safety scroll
+    const scrollTask = requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+    });
+    
+    return () => {
+      cancelAnimationFrame(scrollTask);
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
+  }, [currentScreen, gameMode]);
+
   // Timer Effect: Responsive 100ms update for "counting moments"
   useEffect(() => {
     if (timeLeft === null || timeLeft <= 0 || showVictory || showGameOver || currentScreen !== 'game') return;
@@ -484,16 +516,6 @@ export default function App() {
     }
 
     if (arrow.type === 'rotator') {
-      const neighborsToRotate = arrows.filter(a => {
-        const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
-        return isNeighbor && !removedIds.has(a.id) && a.id !== arrow.id;
-      });
-      
-      neighborsToRotate.forEach(n => {
-        setShakeId(n.id);
-      });
-      setTimeout(() => setShakeId(null), 300);
-
       setArrows(prev => prev.map(a => {
         const isNeighbor = Math.abs(a.x - arrow.x) + Math.abs(a.y - arrow.y) === 1;
         if (isNeighbor && !removedIds.has(a.id) && a.id !== arrow.id) {
@@ -773,9 +795,10 @@ export default function App() {
 
   if (currentScreen === 'menu' || currentScreen === 'timedConfig' || currentScreen === 'timedResult') {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-[#22d3ee]/30 perspective-[2000px]">
+      <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center font-sans selection:bg-[#22d3ee]/30 relative overflow-x-hidden">
         <NoiseOverlay />
         
+        <div className="w-full flex-1 flex flex-col items-center justify-center p-6 perspective-[2000px]">
         <StaticHUD 
           gameTitle="ARROW ESCAPE"
           systemInfo="System Core 4.3 // Optimal"
@@ -922,7 +945,7 @@ export default function App() {
             </div>
           </motion.div>
         </div>
-
+        </div>
 
         <AnimatePresence mode="wait">
           {currentScreen === 'timedConfig' && (
@@ -930,7 +953,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] bg-black/60 md:backdrop-blur-xl flex items-center justify-center p-6"
+              className="fixed inset-0 z-[100] bg-black/60 md:backdrop-blur-xl flex items-center justify-center p-4 md:p-6 overflow-hidden"
             >
               <div className="absolute inset-0 bg-[#22d3ee]/5 pointer-events-none" />
               <motion.div 
@@ -954,7 +977,7 @@ export default function App() {
 
                   {/* Mixed Mode Notice */}
                   <div className="w-full p-6 bg-white/5 border border-white/10 flex items-center gap-6 text-left group hover:border-[#22d3ee]/30 transition-all">
-                    <div className="p-3 bg-[#22d3ee]/10 rounded-lg">
+                    <div className="p-3 bg-[#22d3ee]/10 rounded-lg shrink-0">
                       <RefreshCw size={24} className="text-[#22d3ee] animate-spin-slow" />
                     </div>
                     <div className="space-y-1">
@@ -1023,7 +1046,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] bg-[#000000]/80 md:backdrop-blur-xl flex items-center justify-center p-6 overflow-hidden pointer-events-auto"
+              className="fixed inset-0 z-[100] bg-[#000000]/80 md:backdrop-blur-xl flex items-center justify-center p-4 md:p-6 overflow-hidden pointer-events-auto"
             >
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#22d3ee]/5 to-transparent pointer-events-none" />
               
@@ -1126,7 +1149,7 @@ export default function App() {
                     }}
                     className="flex-1 py-4 md:py-5 bg-white/5 hover:bg-white/10 text-white text-[10px] md:text-[11px] font-black uppercase tracking-[0.4em] border border-white/10 transition-all rounded-3xl relative z-[110]"
                   >
-                    Main Menu
+                    Exit to Hub
                   </button>
                 </div>
               </motion.div>
@@ -1156,14 +1179,34 @@ export default function App() {
         }`} />
       </div>
 
-      {/* Timer Bar for Timed Mode */}
-      {gameMode === 'timed' && timeLeft !== null && (
-        <div className="fixed top-0 left-0 w-full h-1 z-[100] bg-white/5 overflow-hidden">
-          <motion.div 
-            className="h-full bg-gradient-to-r from-amber-500 to-orange-600"
-            animate={{ width: `${(timeLeft / timedTotalSeconds) * 100}%` }}
-            transition={{ ease: "linear", duration: 0.2 }}
-          />
+      {/* Prominent Timer Bar for any mode with timeLeft */}
+      {timeLeft !== null && (
+        <div 
+          className="fixed left-0 w-full z-[300] pointer-events-none"
+          style={{ top: 0 }}
+        >
+          <div className="w-full h-1.5 sm:h-2 lg:h-3 bg-black/40 backdrop-blur-md relative overflow-hidden">
+            <motion.div 
+              className={`h-full shadow-[0_0_20px_rgba(245,158,11,0.6)] ${
+                timeLeft < 15 
+                  ? 'bg-gradient-to-r from-red-500 via-rose-500 to-red-600 animate-pulse' 
+                  : timeLeft < 30
+                    ? 'bg-gradient-to-r from-orange-400 to-red-500'
+                    : 'bg-gradient-to-r from-[#22d3ee] via-amber-500 to-orange-600'
+              }`}
+              initial={false}
+              animate={{ width: `${(timeLeft / (gameMode === 'timed' ? timedTotalSeconds : (currentLevel.timeLimit || 60))) * 100}%` }}
+              transition={{ ease: "linear", duration: 0.2 }}
+            />
+          </div>
+          {timeLeft < 30 && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 0.2, 0] }}
+              transition={{ repeat: Infinity, duration: 1 }}
+              className="absolute inset-0 bg-red-500/10 pointer-events-none"
+            />
+          )}
         </div>
       )}
 
@@ -1218,7 +1261,7 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] p-6 lg:p-10 gap-10 items-start max-w-[1440px] mx-auto w-full">
         {/* Left Sidebar */}
-        <aside className="hidden lg:flex flex-col gap-5">
+        <aside className="flex flex-col gap-5 order-2 lg:order-1">
           {gameMode === 'timed' && (
              <div className="glass-panel rounded-[20px] p-6 border-amber-500/30">
                 <div className="text-[10px] font-black text-amber-500 uppercase tracking-[0.4em] mb-2">Timed Session</div>
@@ -1347,7 +1390,7 @@ export default function App() {
         />
 
         {/* Right Sidebar */ }
-        <aside className="flex flex-col gap-6 overflow-hidden">
+        <aside className="flex flex-col gap-6 overflow-hidden order-3 lg:order-3">
           <div className="glass-panel rounded-[2rem] p-8 border border-white/5 shadow-xl flex flex-col gap-6">
             <div className="flex flex-col gap-4">
               <h3 className="text-[10px] font-black text-[#818cf8] uppercase tracking-[0.2em] px-1">Tactical Operations</h3>
@@ -1518,14 +1561,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Mobile Float Controls */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-[#0f172a]/90 backdrop-blur-xl border border-white/10 rounded-2xl lg:hidden z-30 shadow-2xl">
-        <button onClick={handleUndo} disabled={history.length === 0} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl disabled:opacity-20"><Undo2 size={18} /></button>
-        <button onClick={handleReset} className="px-6 h-12 flex items-center gap-2 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl active:scale-95 transition-transform"><RotateCcw size={18} /> Restart</button>
-        <button onClick={handleHint} className="w-12 h-12 flex items-center justify-center bg-white/5 rounded-xl"><Lightbulb size={18} /></button>
-      </div>
+      {/* Removed Redundant Mobile Float Controls */}
 
-      <footer className="p-6 pb-24 lg:pb-6 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
+      <footer className="p-6 pb-12 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
         Arrow Escape Puzzle &bull; Strategy & Logic
       </footer>
     </div>
@@ -1569,25 +1607,47 @@ const ArrowIcon = React.memo(({ arrow, isHovered }: { arrow: ArrowData, isHovere
   }[arrow.dir];
 
   const specialtyIcon = () => {
+    const iconSize = 12;
+    const iconClass = "text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]";
+    
     switch (arrow.type) {
-      case 'rotator': return <Settings size={10} className="text-white/40 animate-spin-slow" />;
-      case 'shifter': return <Move size={10} className="text-white/40" />;
-      case 'switch': return <div className="w-1.5 h-1.5 bg-pink-400 rounded-sm rotate-45 shadow-[0_0_8px_rgba(244,114,182,0.6)]" />;
+      case 'rotator': return <RefreshCw size={iconSize} className={`${iconClass} animate-spin-slow`} />;
+      case 'shifter': return <Move size={iconSize} className={iconClass} />;
+      case 'switch': return <div className="w-2 h-2 bg-pink-400 rounded-sm rotate-45 shadow-[0_0_10px_rgba(244,114,182,1)] border border-white" />;
+      case 'key': return <Key size={iconSize} className={iconClass} />;
+      case 'locked': return <Lock size={iconSize} className={iconClass} />;
       default: return null;
     }
   };
 
   return (
     <div 
-      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass} ${isHovered ? 'drop-shadow-[0_0_12px_currentColor]' : ''}`}
+      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass}`}
       style={{ transform: `rotate(${rotation}deg)` }}
     >
-      <svg width="75%" height="75%" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">
+      {/* Enhanced Glow Layer - Faster and more reactive */}
+      <motion.div 
+        animate={{ 
+          opacity: isHovered ? 0.5 : 0,
+          scale: isHovered ? 1.3 : 1
+        }}
+        transition={{ duration: 0.1, ease: "easeOut" }}
+        className="absolute inset-0 blur-xl rounded-full bg-current pointer-events-none"
+        style={{ 
+          backgroundColor: 'currentColor',
+          filter: 'blur(16px)'
+        }}
+      />
+
+      <svg width="75%" height="75%" viewBox="0 0 24 24" fill="currentColor" className={`relative z-10 drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)] ${isHovered ? 'drop-shadow-[0_0_8px_currentColor]' : ''}`}>
         <path d="M12 2L2 19H22L12 2Z" />
       </svg>
       {arrow.type && arrow.type !== 'normal' && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="mt-4">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+          <div 
+            className="mt-4"
+            style={{ transform: `rotate(${-rotation}deg)` }}
+          >
             {specialtyIcon()}
           </div>
         </div>
@@ -1627,31 +1687,62 @@ const GameBoard = React.memo(({
   executePremove
 }: any) => {
   const boardRef = useRef<HTMLDivElement>(null);
+  const [touchedArrowId, setTouchedArrowId] = useState<string | null>(null);
+  const touchTimeoutRef = useRef<any>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
+
+  useEffect(() => {
+    return () => {
+      if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (boardRef.current && isInvisible) {
       boardRef.current.style.setProperty('--flashlight-x', '-1000px');
       boardRef.current.style.setProperty('--flashlight-y', '-1000px');
-      boardRef.current.style.setProperty('--flashlight-opacity', '1');
+      boardRef.current.style.setProperty('--flashlight-opacity', '0');
     }
   }, [currentLevel, isInvisible]);
 
-  const handlePointer = (e: React.PointerEvent) => {
+  const isPointerActive = useRef(false);
+
+  const handlePointer = (e: React.PointerEvent, id?: string) => {
+    if (id) {
+       setTouchedArrowId(id);
+       if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
+       touchTimeoutRef.current = setTimeout(() => setTouchedArrowId(null), 150);
+    }
+
     if (!isInvisible || !boardRef.current) return;
-    const rect = boardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    boardRef.current.style.setProperty('--flashlight-x', `${x}px`);
-    boardRef.current.style.setProperty('--flashlight-y', `${y}px`);
-    boardRef.current.style.setProperty('--flashlight-opacity', '1');
+    
+    isPointerActive.current = true;
+    const board = boardRef.current;
+    const { clientX, clientY } = e;
+    
+    requestAnimationFrame(() => {
+      if (!board || !isPointerActive.current) return;
+      const rect = board.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      
+      board.style.setProperty('--flashlight-x', `${x}px`);
+      board.style.setProperty('--flashlight-y', `${y}px`);
+      board.style.setProperty('--flashlight-opacity', '1');
+    });
   };
 
-  const handlePointerLeave = (e: React.PointerEvent) => {
-    // Only hide on mouse devices to maintain visibility on last tap point for mobile
-    if (e.pointerType === 'mouse' && isInvisible && boardRef.current) {
-      boardRef.current.style.setProperty('--flashlight-x', '-1000px');
-      boardRef.current.style.setProperty('--flashlight-y', '-1000px');
+  const handlePointerLeave = () => {
+    isPointerActive.current = false;
+    if (isInvisible && boardRef.current) {
+      const board = boardRef.current;
+      board.style.setProperty('--flashlight-opacity', '0');
+      setTimeout(() => {
+        if (board && !isPointerActive.current) {
+          board.style.setProperty('--flashlight-x', '-2000px');
+          board.style.setProperty('--flashlight-y', '-2000px');
+        }
+      }, 30);
     }
   };
 
@@ -1666,8 +1757,10 @@ const GameBoard = React.memo(({
           ref={boardRef}
           onPointerMove={handlePointer}
           onPointerDown={handlePointer}
+          onPointerUp={handlePointerLeave}
+          onPointerCancel={handlePointerLeave}
           onPointerLeave={handlePointerLeave}
-          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-xl md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden"
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-xl md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden touch-none select-none"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
@@ -1685,12 +1778,23 @@ const GameBoard = React.memo(({
           {/* Internal Board Ambient Glow */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] pointer-events-none z-0" />
 
-          {/* Dark Overlay for Invisible Mode - Optimized with CSS variables */}
+          {/* Dark Overlay for Invisible Mode - Faster with radial-gradient background */}
           {isInvisible && (
             <div 
-              className="absolute inset-0 z-20 pointer-events-none transition-opacity duration-300"
+              className="absolute inset-0 z-20 pointer-events-none"
               style={{
-                background: `radial-gradient(circle 85px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
+                background: `radial-gradient(circle 90px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
+                opacity: 1
+              }}
+            />
+          )}
+
+          {/* Flashlight Effect Layer (Additive Light) */}
+          {isInvisible && (
+            <div 
+              className="absolute inset-0 z-21 pointer-events-none transition-opacity duration-75"
+              style={{
+                background: `radial-gradient(circle 80px at var(--flashlight-x) var(--flashlight-y), rgba(255,255,255,0.1) 0%, transparent 100%)`,
                 opacity: 'var(--flashlight-opacity)'
               }}
             />
@@ -1825,15 +1929,20 @@ const GameBoard = React.memo(({
                   opacity: 0,
                   transition: { duration: 0.05 }
                 }}
-                transition={{ type: "spring", stiffness: 400, damping: 25, mass: 0.5 }}
+                transition={{ 
+                  x: isShaking ? { duration: 0.4, ease: "easeInOut" } : { type: "spring", stiffness: 400, damping: 25, mass: 0.5 },
+                  default: { type: "spring", stiffness: 400, damping: 25, mass: 0.5 }
+                }}
                 whileHover={{ scale: isLocked ? 1 : 1.05 }}
                 whileTap={{ scale: isLocked ? 1 : 0.95 }}
+                onPointerEnter={() => setHoveredArrowId(arrow.id)}
+                onPointerLeave={() => setHoveredArrowId(null)}
                 onPointerDown={(e) => {
-                  handlePointer(e);
+                  handlePointer(e, arrow.id);
                   setHoveredArrowId(arrow.id);
                 }}
-                onMouseEnter={() => setHoveredArrowId(arrow.id)}
-                onMouseLeave={() => setHoveredArrowId(null)}
+                onPointerUp={() => setHoveredArrowId(null)}
+                onPointerCancel={() => setHoveredArrowId(null)}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
@@ -1865,7 +1974,7 @@ const GameBoard = React.memo(({
               >
                 <ArrowIcon 
                   arrow={arrow} 
-                  isHovered={hoveredArrowId === arrow.id || (isExecutingPremove && premoveQueue[execIndex] === arrow.id)} 
+                  isHovered={hoveredArrowId === arrow.id || touchedArrowId === arrow.id || (isExecutingPremove && premoveQueue[execIndex] === arrow.id)} 
                 />
                 {isQueued && (
                   <div className="absolute inset-0 flex items-center justify-center">
