@@ -307,6 +307,27 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
+    if (!isMuted) {
+      soundService.resume();
+    }
+  }, [isMuted]);
+
+  // Audio Context wake-up on focus/visibility
+  useEffect(() => {
+    const handleFocus = () => {
+      if (!isMuted) soundService.resume();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !isMuted) {
+        soundService.resume();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [isMuted]);
 
   useEffect(() => {
@@ -705,6 +726,7 @@ export default function App() {
       setHistory([]);
       setClickCount(0);
       setHintId(null);
+      setHoveredArrowId(null);
       setShowVictory(false);
       setShowGameOver(false);
       setGameOverReason(null);
@@ -734,6 +756,7 @@ export default function App() {
     setShowGameOver(false);
     setGameOverReason(null);
     setClickCount(0);
+    setHoveredArrowId(null);
     setTimeLeft(currentLevel.timeLimit || null);
     setPremoveQueue([]);
     setIsExecutingPremove(false);
@@ -759,6 +782,7 @@ export default function App() {
     if (!isMuted) soundService.playClick();
     if (currentLevelIdx < LEVEL_METADATA.length - 1 && showVictory) {
       setShowVictory(false);
+      setHoveredArrowId(null);
       // Clear queue and state immediately to prevent "ghost" executions on next level
       setPremoveQueue([]);
       setIsExecutingPremove(false);
@@ -770,6 +794,7 @@ export default function App() {
 
   const selectLevel = (idx: number) => {
     if (!isMuted) soundService.playLevelStart();
+    setHoveredArrowId(null);
     setCurrentLevelIdx(idx);
     setShowLevelSelector(false);
   };
@@ -803,7 +828,11 @@ export default function App() {
           gameTitle="ARROW ESCAPE"
           systemInfo="System Core 4.3 // Optimal"
           isMuted={isMuted}
-          onToggleMute={() => setIsMuted(prev => !prev)}
+          onToggleMute={() => {
+            const nextMuted = !isMuted;
+            setIsMuted(nextMuted);
+            if (!nextMuted) soundService.resume();
+          }}
         />
 
         {/* Main Content: 3D Mode Gallery */}
@@ -1686,6 +1715,11 @@ const GameBoard = React.memo(({
   const [touchedArrowId, setTouchedArrowId] = useState<string | null>(null);
   const touchTimeoutRef = useRef<any>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
+
+  // Reset touched state when level changes
+  useEffect(() => {
+    setTouchedArrowId(null);
+  }, [currentLevelIdx, gameMode]);
 
   useEffect(() => {
     return () => {
