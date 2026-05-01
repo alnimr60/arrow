@@ -19,13 +19,20 @@ jobs:
           git config user.name "Fortress Sync"
           git config user.email "actions@github.com"
           
-          # 1. Grab everything except the iOS folders from Main
-          git checkout origin/main -- src public index.html tsconfig.json vite.config.ts package.json package-lock.json
+          # 1. Save the iOS Fortress files in a temporary spot
+          mkdir ../fortress_backup
+          cp -r ios justfile capacitor.config.ts .github IOS_BUILD_GUIDE.md ../fortress_backup/
           
-          # 2. Re-inject the Capacitor dependencies (in case AI Studio removed them)
-          npm install @capacitor/core @capacitor/cli @capacitor/ios --package-lock-only
+          # 2. Overwrite everything with the code from AI Studio (Main branch)
+          git checkout origin/main -- .
           
-          # 3. Commit and Push to Master
+          # 3. Restore the iOS Fortress files from our backup
+          cp -r ../fortress_backup/* .
+          
+          # 4. Re-inject Capacitor deps just in case
+          npm install @capacitor/core @capacitor/cli @capacitor/ios --package-lock-only || echo "Lockfile update failed, skipping"
+          
+          # 5. Commit and Push to Master
           git add .
           git commit -m "🚀 Sync latest game code from AI Studio" || echo "No changes to sync"
           git push origin master
