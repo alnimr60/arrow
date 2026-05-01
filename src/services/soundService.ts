@@ -9,19 +9,19 @@ class SoundService {
 
   private init() {
     try {
-      if (!this.ctx) {
-        const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) return;
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      if (!this.ctx || this.ctx.state === 'closed') {
         this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
         this.masterGain = this.ctx.createGain();
         this.masterGain.connect(this.ctx.destination);
         this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
       }
       
-      if (this.ctx && this.ctx.state === 'suspended') {
+      if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx.state as any) === 'interrupted')) {
         this.ctx.resume().catch(err => {
           // Silently fail if resume is blocked by browser policy
-          // It will be tried again on next interaction
         });
       }
     } catch (e) {

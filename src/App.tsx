@@ -205,6 +205,7 @@ export default function App() {
   const [timedScore, setTimedScore] = useState(0);
   const [lastSessionDuration, setLastSessionDuration] = useState<number>(3);
   const [timedLevelIdx, setTimedLevelIdx] = useState(0);
+  const [boardId, setBoardId] = useState(0);
 
   const [standardLevelIdx, setStandardLevelIdx] = useState(() => {
     const saved = localStorage.getItem('standard-level');
@@ -307,6 +308,27 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
+    if (!isMuted) {
+      soundService.resume();
+    }
+  }, [isMuted]);
+
+  // Audio Context wake-up on focus/visibility
+  useEffect(() => {
+    const handleFocus = () => {
+      if (!isMuted) soundService.resume();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !isMuted) {
+        soundService.resume();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [isMuted]);
 
   useEffect(() => {
@@ -691,6 +713,7 @@ export default function App() {
   };
 
   const handleReset = () => {
+    setBoardId(prev => prev + 1);
     soundService.resume();
     if (!isMuted) soundService.playLevelStart();
 
@@ -705,6 +728,7 @@ export default function App() {
       setHistory([]);
       setClickCount(0);
       setHintId(null);
+      setHoveredArrowId(null);
       setShowVictory(false);
       setShowGameOver(false);
       setGameOverReason(null);
@@ -734,6 +758,7 @@ export default function App() {
     setShowGameOver(false);
     setGameOverReason(null);
     setClickCount(0);
+    setHoveredArrowId(null);
     setTimeLeft(currentLevel.timeLimit || null);
     setPremoveQueue([]);
     setIsExecutingPremove(false);
@@ -751,6 +776,7 @@ export default function App() {
 
   const lastNextLevelTimeRef = useRef(0);
   const nextLevel = () => {
+    setBoardId(prev => prev + 1);
     const now = Date.now();
     if (now - lastNextLevelTimeRef.current < 500) return;
     lastNextLevelTimeRef.current = now;
@@ -759,6 +785,7 @@ export default function App() {
     if (!isMuted) soundService.playClick();
     if (currentLevelIdx < LEVEL_METADATA.length - 1 && showVictory) {
       setShowVictory(false);
+      setHoveredArrowId(null);
       // Clear queue and state immediately to prevent "ghost" executions on next level
       setPremoveQueue([]);
       setIsExecutingPremove(false);
@@ -769,7 +796,9 @@ export default function App() {
   };
 
   const selectLevel = (idx: number) => {
+    setBoardId(prev => prev + 1);
     if (!isMuted) soundService.playLevelStart();
+    setHoveredArrowId(null);
     setCurrentLevelIdx(idx);
     setShowLevelSelector(false);
   };
@@ -803,7 +832,11 @@ export default function App() {
           gameTitle="ARROW ESCAPE"
           systemInfo="System Core 4.3 // Optimal"
           isMuted={isMuted}
-          onToggleMute={() => setIsMuted(prev => !prev)}
+          onToggleMute={() => {
+            const nextMuted = !isMuted;
+            setIsMuted(nextMuted);
+            if (!nextMuted) soundService.resume();
+          }}
         />
 
         {/* Main Content: 3D Mode Gallery */}
@@ -1299,6 +1332,7 @@ export default function App() {
 
         {/* Center: Game Board */}
         <GameBoard 
+          key={`${gameMode}-${currentLevelIdx}-${timedLevelIdx}-${boardId}`}
           currentLevel={currentLevel}
           tiles={tiles}
           ghostPath={ghostPath}
