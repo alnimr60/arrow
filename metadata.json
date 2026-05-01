@@ -1,0 +1,6 @@
+{
+  "name": "Arrow Escape Puzzle",
+  "description": "A logic puzzle where you must untangle and remove arrows in the correct order to clear the board.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --animate-gradient-x: gradient-x 3s ease infinite;
+  --animate-flashlight-preview: flashlight-preview 4s ease-in-out infinite;
+  --animate-scanline: scanline 8s linear infinite;
+  --animate-spin-slow: spin 8s linear infinite;
+
+  @keyframes gradient-x {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  @keyframes flashlight-preview {
+    0% { background-position: 0% 0%; }
+    25% { background-position: 100% 0%; }
+    50% { background-position: 100% 100%; }
+    75% { background-position: 0% 100%; }
+    100% { background-position: 0% 0%; }
+  }
+
+  @keyframes noise {
+    0%, 100% { transform: translate(0, 0); }
+    10% { transform: translate(-1%, -1%); }
+    20% { transform: translate(1%, 1%); }
+    30% { transform: translate(-2%, 2%); }
+    40% { transform: translate(2%, -2%); }
+    50% { transform: translate(-1%, 2%); }
+    60% { transform: translate(2%, 1%); }
+    70% { transform: translate(1%, -2%); }
+    80% { transform: translate(-2%, -1%); }
+    90% { transform: translate(2%, 2%); }
+  }
+
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+}
+
+.noise-overlay {
+  position: fixed;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 9999;
+  animation: noise 2s steps(10) infinite;
+}
+
+.chromatic-title {
+  text-shadow: 
+    2px 0 0 rgba(255,0,0,0.4),
+    -2px 0 0 rgba(0,255,255,0.4);
+}
+
+.panel-corner {
+  @apply absolute w-2 h-2 border-white/40;
+}
+
+:root {
+  --bg-color: #020617;
+  --card-bg: rgba(15, 23, 42, 0.4);
+  --accent-cyan: #22d3ee;
+  --accent-purple: #818cf8;
+  --text-main: #f8fafc;
+  --text-dim: #94a3b8;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  
+  /* Safe Area Insets for iPhone */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  
+  /* Prevent text selection and 300ms tap delay */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  /* Use safe areas for height logic */
+  min-height: -webkit-fill-available;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(129, 140, 248, 0.1) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(34, 211, 238, 0.1) 0%, transparent 40%);
+  overflow-x: hidden;
+}
+
+@layer utilities {
+  .glass-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--glass-shadow);
+  }
+}

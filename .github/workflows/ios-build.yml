@@ -1,0 +1,35 @@
+name: Build Unsigned iOS IPA
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Install Just
+        run: brew install just
+
+      - name: Build and Archive
+        run: just archive
+
+      - name: Export Unsigned IPA
+        run: just export-unsigned
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArrowEscape-Unsigned-IPA
+          path: build/ipa/*.ipa
