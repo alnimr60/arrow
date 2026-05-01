@@ -1,6 +1,4 @@
-# iOS Build Configuration (Capacitor + Windows)
-set shell := ["powershell.exe", "-Command"]
-
+# iOS Build Configuration (Smart Windows/Mac detection)
 app_name := "Arrow Escape"
 workspace := "ios/App/App.xcworkspace"
 scheme := "App"
@@ -16,8 +14,7 @@ default:
 # Clean everything
 clean:
     @echo "🧹 Cleaning..."
-    if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-    if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
+    {{ if os_family() == "windows" { "if (Test-Path 'build') { Remove-Item -Recurse -Force 'build' }; if (Test-Path 'dist') { Remove-Item -Recurse -Force 'dist' }" } else { "rm -rf build dist" } }}
     @echo "✅ Clean complete"
 
 # Sync web code to native iOS
@@ -26,9 +23,9 @@ sync:
     npm run build
     npx cap sync ios
 
-# Build & Archive (Use these on GitHub Actions)
+# Build & Archive (Uses xcodebuild on Mac)
 archive: sync
-    @echo "📦 Creating archive (Remote Mac)..."
+    @echo "📦 Creating archive..."
     xcodebuild archive \
         -workspace {{workspace}} \
         -scheme {{scheme}} \
@@ -40,25 +37,28 @@ archive: sync
         CODE_SIGN_STYLE=Automatic \
         ONLY_ACTIVE_ARCH=NO
 
-# Export Unsigned IPA (Works on Windows/Mac)
+# Export Unsigned IPA (Works on Windows and Mac)
 export-unsigned:
     @echo "📱 Creating unsigned IPA for Sideloadly..."
-    if (-not (Test-Path "{{archive_path}}")) { Write-Error "❌ Archive not found!"; exit 1 }
-    
-    $appPath = Get-ChildItem -Path "{{archive_path}}/Products/Applications" -Filter "*.app" -Recurse | Select-Object -First 1
-    $payloadDir = "{{export_path}}/Payload"
+    {{ if os_family() == "windows" { 
+        "$appPath = Get-ChildItem -Path '" + archive_path + "/Products/Applications' -Filter '*.app' -Recurse | Select-Object -First 1; " +
+        "$payloadDir = '" + export_path + "/Payload'; " +
+        "if (Test-Path $payloadDir) { Remove-Item -Recurse -Force $payloadDir }; " +
+        "New-Item -ItemType Directory -Force -Path $payloadDir | Out-Null; " +
+        "Copy-Item -Path $appPath.FullName -Destination $payloadDir -Recurse; " +
+        "$ipaName = 'ArrowEscape-Unsigned.ipa'; " +
+        "if (Test-Path '" + export_path + "/$ipaName') { Remove-Item '" + export_path + "/$ipaName' }; " +
+        "Compress-Archive -Path $payloadDir -DestinationPath '" + export_path + "/$ipaName'; " +
+        "Remove-Item -Recurse -Force $payloadDir"
+    } else {
+        "APP_PATH=$(find " + archive_path + "/Products/Applications -name '*.app' | head -n 1); " +
+        "mkdir -p " + export_path + "/Payload; " +
+        "cp -r \"$APP_PATH\" " + export_path + "/Payload/; " +
+        "cd " + export_path + "; " +
+        "zip -r ArrowEscape-Unsigned.ipa Payload; " +
+        "rm -rf Payload"
+    } }}
+    @echo "✅ Unsigned IPA created in {{export_path}}"
 
-    if (Test-Path $payloadDir) { Remove-Item -Recurse -Force $payloadDir }
-    New-Item -ItemType Directory -Force -Path $payloadDir | Out-Null
-    
-    Copy-Item -Path $appPath.FullName -Destination $payloadDir -Recurse
-    
-    $ipaName = "ArrowEscape-Unsigned.ipa"
-    if (Test-Path "{{export_path}}/$ipaName") { Remove-Item "{{export_path}}/$ipaName" }
-    
-    Compress-Archive -Path $payloadDir -DestinationPath "{{export_path}}/$ipaName"
-    Remove-Item -Recurse -Force $payloadDir
-    @echo "✅ Unsigned IPA created: {{export_path}}/$ipaName"
-
-# Full workflow for GitHub
+# Full workflow
 ios: clean archive export-unsigned
