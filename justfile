@@ -33,8 +33,9 @@ archive: sync
         -sdk iphoneos \
         -destination 'generic/platform=iOS' \
         -archivePath {{archive_path}} \
-        -allowProvisioningUpdates \
-        CODE_SIGN_STYLE=Automatic \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGN_IDENTITY="" \
         ONLY_ACTIVE_ARCH=NO
 
 # Export Unsigned IPA (Works on Windows and Mac)
