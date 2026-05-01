@@ -19,7 +19,7 @@ class SoundService {
         this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
       }
       
-      if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
+      if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx.state as any) === 'interrupted')) {
         this.ctx.resume().catch(err => {
           // Silently fail if resume is blocked by browser policy
         });

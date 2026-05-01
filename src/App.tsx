@@ -205,6 +205,7 @@ export default function App() {
   const [timedScore, setTimedScore] = useState(0);
   const [lastSessionDuration, setLastSessionDuration] = useState<number>(3);
   const [timedLevelIdx, setTimedLevelIdx] = useState(0);
+  const [boardId, setBoardId] = useState(0);
 
   const [standardLevelIdx, setStandardLevelIdx] = useState(() => {
     const saved = localStorage.getItem('standard-level');
@@ -712,6 +713,7 @@ export default function App() {
   };
 
   const handleReset = () => {
+    setBoardId(prev => prev + 1);
     soundService.resume();
     if (!isMuted) soundService.playLevelStart();
 
@@ -774,6 +776,7 @@ export default function App() {
 
   const lastNextLevelTimeRef = useRef(0);
   const nextLevel = () => {
+    setBoardId(prev => prev + 1);
     const now = Date.now();
     if (now - lastNextLevelTimeRef.current < 500) return;
     lastNextLevelTimeRef.current = now;
@@ -793,6 +796,7 @@ export default function App() {
   };
 
   const selectLevel = (idx: number) => {
+    setBoardId(prev => prev + 1);
     if (!isMuted) soundService.playLevelStart();
     setHoveredArrowId(null);
     setCurrentLevelIdx(idx);
@@ -1328,6 +1332,7 @@ export default function App() {
 
         {/* Center: Game Board */}
         <GameBoard 
+          key={`${gameMode}-${currentLevelIdx}-${timedLevelIdx}-${boardId}`}
           currentLevel={currentLevel}
           tiles={tiles}
           ghostPath={ghostPath}
@@ -1715,11 +1720,6 @@ const GameBoard = React.memo(({
   const [touchedArrowId, setTouchedArrowId] = useState<string | null>(null);
   const touchTimeoutRef = useRef<any>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
-
-  // Reset touched state when level changes
-  useEffect(() => {
-    setTouchedArrowId(null);
-  }, [currentLevelIdx, gameMode]);
 
   useEffect(() => {
     return () => {
