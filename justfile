@@ -1,6 +1,6 @@
 # iOS Build Configuration (Smart Windows/Mac detection)
 app_name := "Arrow Escape"
-workspace := "ios/App/App.xcworkspace"
+project := "ios/App/App.xcodeproj"
 scheme := "App"
 configuration := "Release"
 archive_path := "build/App.xcarchive"
@@ -27,7 +27,7 @@ sync:
 archive: sync
     @echo "📦 Creating archive..."
     xcodebuild archive \
-        -workspace {{workspace}} \
+        -project {{project}} \
         -scheme {{scheme}} \
         -configuration {{configuration}} \
         -sdk iphoneos \
