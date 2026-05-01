@@ -1586,47 +1586,105 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Removed Redundant Mobile Float Controls */}
+
+      <footer className="p-6 pb-12 text-center text-[10px] text-[#94a3b8] uppercase tracking-[0.2em] opacity-40">
+        Arrow Escape Puzzle &bull; Strategy & Logic
+      </footer>
     </div>
   );
 }
 
-function StatItem({ label, value }: { label: string, value: string | number }) {
+// Memoized Stat Item for efficiency
+const StatItem = React.memo(({ label, value }: { label: string, value: string | number }) => {
   return (
-    <div className="flex flex-col items-end">
-      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
-      <span className="text-lg font-black text-white italic tracking-tighter leading-none">{value}</span>
+    <div className="text-center min-w-[70px] lg:min-w-[80px] group/stat">
+      <div className="text-[9px] uppercase text-[#94a3b8] font-black tracking-[0.2em] mb-1 group-hover/stat:text-[#22d3ee] transition-colors">{label}</div>
+      <div className="text-xl lg:text-2xl font-black tabular-nums text-white chromatic-title leading-tight">
+        {typeof value === 'number' ? value.toString().padStart(2, '0') : value}
+      </div>
     </div>
   );
-}
+});
 
-function ArrowIcon({ arrow, size = 28 }: { arrow: ArrowData, size?: number }) {
-  const rotation: Record<Direction, number> = {
-    up: 0,
-    right: 90,
-    down: 180,
-    left: 270
-  };
-
-  const colors: Record<string, string> = {
-    standard: 'text-rose-500',
-    locked: 'text-slate-700',
-    key: 'text-amber-500',
-    switch: 'text-pink-500',
-    rotator: 'text-purple-500',
-    shifter: 'text-cyan-500'
-  };
-
+function ActionButton({ icon, label, onClick, disabled }: { icon: ReactNode, label: string, onClick: () => void, disabled?: boolean }) {
   return (
-    <motion.div
-      animate={{ rotate: rotation[arrow.dir] }}
-      className={colors[arrow.type] || 'text-white'}
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full py-3 bg-white/5 border border-white/10 text-[#f8fafc] font-semibold rounded-xl flex items-center gap-3 px-5 transition-all hover:bg-white/10 hover:border-[#22d3ee]/30 active:scale-95 disabled:opacity-20 disabled:pointer-events-none"
     >
-      <ArrowUp size={size} strokeWidth={4} />
-    </motion.div>
+      <span className="opacity-70">{icon}</span>
+      <span className="text-sm">{label}</span>
+    </button>
   );
 }
 
-function GameBoard({ 
+// Optimized Arrow Icon with memo
+const ArrowIcon = React.memo(({ arrow, isHovered }: { arrow: ArrowData, isHovered?: boolean }) => {
+  const rotation = { up: 0, right: 90, down: 180, left: 270 }[arrow.dir];
+  // Arrow colors with higher contrast for high-end look
+  const colorClass = {
+    up: 'text-[#f43f5e]',    // Rose
+    right: 'text-[#10b981]',  // Emerald
+    down: 'text-[#f59e0b]',   // Amber
+    left: 'text-[#3b82f6]'    // Blue
+  }[arrow.dir];
+
+  const specialtyIcon = () => {
+    const iconSize = 12;
+    const iconClass = "text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]";
+    
+    switch (arrow.type) {
+      case 'rotator': return <RefreshCw size={iconSize} className={`${iconClass} animate-spin-slow`} />;
+      case 'shifter': return <Move size={iconSize} className={iconClass} />;
+      case 'switch': return <div className="w-2 h-2 bg-pink-400 rounded-sm rotate-45 shadow-[0_0_10px_rgba(244,114,182,1)] border border-white" />;
+      case 'key': return <Key size={iconSize} className={iconClass} />;
+      case 'locked': return <Lock size={iconSize} className={iconClass} />;
+      default: return null;
+    }
+  };
+
+  return (
+    <div 
+      className={`relative w-full h-full flex items-center justify-center transition-all duration-300 ${colorClass}`}
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
+      {/* Enhanced Glow Layer - Faster and more reactive */}
+      <motion.div 
+        animate={{ 
+          opacity: isHovered ? 0.5 : 0,
+          scale: isHovered ? 1.3 : 1
+        }}
+        transition={{ duration: 0.1, ease: "easeOut" }}
+        className="absolute inset-0 blur-xl rounded-full bg-current pointer-events-none"
+        style={{ 
+          backgroundColor: 'currentColor',
+          filter: 'blur(16px)'
+        }}
+      />
+
+      <svg width="75%" height="75%" viewBox="0 0 24 24" fill="currentColor" className={`relative z-10 drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)] ${isHovered ? 'drop-shadow-[0_0_8px_currentColor]' : ''}`}>
+        <path d="M12 2L2 19H22L12 2Z" />
+      </svg>
+      {arrow.type && arrow.type !== 'normal' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+          <div 
+            className="mt-4"
+            style={{ transform: `rotate(${-rotation}deg)` }}
+          >
+            {specialtyIcon()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/**
+ * GameBoard Component: Memoized to prevent re-renders from timer updates.
+ */
+const GameBoard = React.memo(({ 
   currentLevel, 
   tiles, 
   ghostPath, 
@@ -1640,10 +1698,10 @@ function GameBoard({
   showGameOver, 
   gameOverReason, 
   currentLevelIdx, 
-  gameMode, 
-  timedFlavor, 
-  LEVEL_METADATA, 
-  handleArrowClick,
+  gameMode,
+  timedFlavor,
+  LEVEL_METADATA,
+  handleArrowClick, 
   hoveredArrowId,
   setHoveredArrowId,
   nextLevel,
@@ -1652,275 +1710,424 @@ function GameBoard({
   execIndex,
   isExecutingPremove,
   executePremove
-}: any) {
+}: any) => {
   const boardRef = useRef<HTMLDivElement>(null);
-  const [flashlightPos, setFlashlightPos] = useState({ x: 0, y: 0 });
+  const [touchedArrowId, setTouchedArrowId] = useState<string | null>(null);
+  const touchTimeoutRef = useRef<any>(null);
+  const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
 
-  const isActuallyInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
+  // Reset touched state when level changes
+  useEffect(() => {
+    setTouchedArrowId(null);
+  }, [currentLevelIdx, gameMode]);
 
   useEffect(() => {
-    if (!isActuallyInvisible) return;
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      if (!boardRef.current) return;
-      const rect = boardRef.current.getBoundingClientRect();
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-      setFlashlightPos({
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      });
-    };
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('touchstart', handleMove);
-    window.addEventListener('touchmove', handleMove);
     return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('touchstart', handleMove);
-      window.removeEventListener('touchmove', handleMove);
+      if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
     };
-  }, [isActuallyInvisible]);
+  }, []);
+
+  useEffect(() => {
+    if (boardRef.current && isInvisible) {
+      boardRef.current.style.setProperty('--flashlight-x', '-1000px');
+      boardRef.current.style.setProperty('--flashlight-y', '-1000px');
+      boardRef.current.style.setProperty('--flashlight-opacity', '0');
+    }
+  }, [currentLevel, isInvisible]);
+
+  const isPointerActive = useRef(false);
+
+  const handlePointer = (e: React.PointerEvent, id?: string) => {
+    if (id) {
+       setTouchedArrowId(id);
+       if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
+       touchTimeoutRef.current = setTimeout(() => setTouchedArrowId(null), 150);
+    }
+
+    if (!isInvisible || !boardRef.current) return;
+    
+    isPointerActive.current = true;
+    const board = boardRef.current;
+    const { clientX, clientY } = e;
+    
+    requestAnimationFrame(() => {
+      if (!board || !isPointerActive.current) return;
+      const rect = board.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      
+      board.style.setProperty('--flashlight-x', `${x}px`);
+      board.style.setProperty('--flashlight-y', `${y}px`);
+      board.style.setProperty('--flashlight-opacity', '1');
+    });
+  };
+
+  const handlePointerLeave = () => {
+    isPointerActive.current = false;
+    if (isInvisible && boardRef.current) {
+      const board = boardRef.current;
+      board.style.setProperty('--flashlight-opacity', '0');
+      setTimeout(() => {
+        if (board && !isPointerActive.current) {
+          board.style.setProperty('--flashlight-x', '-2000px');
+          board.style.setProperty('--flashlight-y', '-2000px');
+        }
+      }, 30);
+    }
+  };
 
   return (
-    <div className="flex flex-col items-center gap-10 py-4 order-1 lg:order-2">
-      {/* Board Container */}
+    <section className="flex flex-col items-center justify-center relative touch-none py-8">
       <div className="relative group/board">
-        {/* Dynamic Glow Brackets */}
-        <div className="absolute -inset-10 pointer-events-none opacity-20 group-hover/board:opacity-40 transition-opacity duration-700">
-           <div className="absolute top-0 left-0 w-20 h-20 border-t-2 border-l-2 border-cyan-500 rounded-tl-3xl" />
-           <div className="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-cyan-500 rounded-tr-3xl" />
-           <div className="absolute bottom-0 left-0 w-20 h-20 border-b-2 border-l-2 border-cyan-500 rounded-bl-3xl" />
-           <div className="absolute bottom-0 right-0 w-20 h-20 border-b-2 border-r-2 border-cyan-500 rounded-br-3xl" />
-        </div>
+        {/* Technical Corner Brackets for Board */}
+        <div className="panel-corner top-[-10px] left-[-10px] border-t-2 border-l-2 opacity-40 group-hover/board:opacity-100 transition-opacity" />
+        <div className="panel-corner bottom-[-10px] right-[-10px] border-b-2 border-r-2 opacity-40 group-hover/board:opacity-100 transition-opacity" />
 
-        <motion.div 
+        <div 
           ref={boardRef}
-          className={`
-            relative bg-[#020617] border-2 border-white/20 rounded-[40px] p-4 md:p-6 shadow-[0_40px_120px_rgba(0,0,0,0.9)] overflow-hidden transition-all duration-700
-            ${isExecutingPremove ? 'ring-4 ring-emerald-500/30' : ''}
-          `}
+          onPointerMove={handlePointer}
+          onPointerDown={handlePointer}
+          onPointerUp={handlePointerLeave}
+          onPointerCancel={handlePointerLeave}
+          onPointerLeave={handlePointerLeave}
+          className="relative bg-[#020617] border-2 border-white/20 rounded-[3rem] p-4 shadow-xl md:shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden touch-none select-none"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${currentLevel.gridSize}, 1fr)`,
             gridTemplateRows: `repeat(${currentLevel.gridSize}, 1fr)`,
             gap: '8px',
-            width: 'min(85vw, 600px)',
-            height: 'min(85vw, 600px)',
+            width: 'min(90vw, 480px)',
+            height: 'min(90vw, 480px)',
+            cursor: isInvisible ? 'none' : 'default',
+            // Default flashlight values
+            ['--flashlight-x' as any]: '-1000px',
+            ['--flashlight-y' as any]: '-1000px',
+            ['--flashlight-opacity' as any]: '1'
           }}
         >
-          {/* Static Background Grid */}
-          {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
-            <div key={i} className="bg-slate-900/40 rounded-2xl border border-white/[0.02]" />
-          ))}
+          {/* Internal Board Ambient Glow */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_0%,transparent_100%)] pointer-events-none z-0" />
 
-          {/* Flashlight Overlay for Invisible Mode */}
-          {isActuallyInvisible && !showVictory && (
+          {/* Dark Overlay for Invisible Mode - Faster with radial-gradient background */}
+          {isInvisible && (
             <div 
-              className="absolute inset-0 z-30 pointer-events-none transition-opacity duration-500"
+              className="absolute inset-0 z-20 pointer-events-none"
               style={{
-                background: `radial-gradient(circle 120px at ${flashlightPos.x}px ${flashlightPos.y}px, transparent 0%, rgba(2, 6, 23, 1) 100%)`
+                background: `radial-gradient(circle 90px at var(--flashlight-x) var(--flashlight-y), transparent 0%, rgba(2, 6, 23, 1) 100%)`,
+                opacity: 1
               }}
             />
           )}
 
-          {/* Tiles (Gates) */}
-          {(tiles || []).map((tile: TileData) => (
-            <div
-              key={tile.id}
-              className={`absolute inset-0 flex items-center justify-center transition-all duration-500 z-20 ${tile.isOpen ? 'opacity-10 opacity-0 scale-90' : 'opacity-100'}`}
+          {/* Flashlight Effect Layer (Additive Light) */}
+          {isInvisible && (
+            <div 
+              className="absolute inset-0 z-21 pointer-events-none transition-opacity duration-75"
               style={{
-                width: `calc((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize})`,
-                height: `calc((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize})`,
-                left: `calc(16px + ${tile.x} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px))`,
-                top: `calc(16px + ${tile.y} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px))`,
+                background: `radial-gradient(circle 80px at var(--flashlight-x) var(--flashlight-y), rgba(255,255,255,0.1) 0%, transparent 100%)`,
+                opacity: 'var(--flashlight-opacity)'
               }}
-            >
-              <div className={`w-full h-full rounded-2xl border-4 flex items-center justify-center bg-slate-950/80 ${tile.type === 'gate-vertical' ? 'border-pink-500/50' : 'border-indigo-500/50'}`}>
-                {tile.type === 'gate-vertical' ? <X className="text-pink-500" size={32} /> : <AlertTriangle className="text-indigo-500" size={32} />}
-              </div>
-            </div>
+            />
+          )}
+
+          {/* Cell Grid Background - High contrast style */}
+          {Array.from({ length: currentLevel.gridSize * currentLevel.gridSize }).map((_, i) => (
+            <div key={i} className="bg-slate-900/40 rounded-xl" />
           ))}
 
-          {/* Ghost Path Indicator */}
-          <AnimatePresence>
-            {ghostPath && (
+          {/* Tiles: Conveyors, Gates, etc. */}
+          {tiles.map((tile: TileData, i: number) => {
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${tile.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${tile.y} * (${cellSize} + 8px))`;
+            
+            return (
+              <div 
+                key={`tile-${i}`}
+                className={`
+                  absolute rounded-lg flex items-center justify-center opacity-60
+                  ${tile.type.startsWith('conveyor') ? 'bg-slate-700/30' : ''}
+                  ${tile.type.startsWith('gate') ? (tile.isOpen ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/20 border-2 border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]') : ''}
+                `}
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  left: offsetX,
+                  top: offsetY,
+                }}
+              >
+                {tile.type.startsWith('conveyor') && (
+                  <Move size={16} className={`text-slate-500 ${tile.type === 'conveyor-up' ? '-rotate-90' : tile.type === 'conveyor-down' ? 'rotate-90' : tile.type === 'conveyor-left' ? 'rotate-180' : ''}`} />
+                )}
+                {tile.type.startsWith('gate') && (
+                  tile.isOpen ? <div className="w-1 h-full bg-emerald-500/20 rounded-full" /> : <Lock size={12} className="text-red-400" />
+                )}
+              </div>
+            );
+          })}
+
+        {/* Ghost Path Indicator (Launch Beam) */}
+        <AnimatePresence>
+          {ghostPath && (() => {
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${ghostPath.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${ghostPath.y} * (${cellSize} + 8px))`;
+            
+            const style: React.CSSProperties = {
+              position: 'absolute',
+              borderRadius: '12px',
+              boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)',
+              zIndex: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden'
+            };
+
+            const beamColor = 'rgba(34, 211, 238, 0.4)';
+            const fadeColor = 'rgba(34, 211, 238, 0)';
+
+            if (ghostPath.dir === 'right') {
+              style.left = offsetX;
+              style.right = '16px';
+              style.top = offsetY;
+              style.height = cellSize;
+              style.background = `linear-gradient(to right, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'left') {
+              style.left = '16px';
+              style.width = `calc(${offsetX} + ${cellSize} - 16px)`;
+              style.top = offsetY;
+              style.height = cellSize;
+              style.background = `linear-gradient(to left, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'down') {
+              style.left = offsetX;
+              style.width = cellSize;
+              style.top = offsetY;
+              style.bottom = '16px';
+              style.background = `linear-gradient(to bottom, ${beamColor}, ${fadeColor})`;
+            } else if (ghostPath.dir === 'up') {
+              style.left = offsetX;
+              style.width = cellSize;
+              style.top = '16px';
+              style.height = `calc(${offsetY} + ${cellSize} - 16px)`;
+              style.background = `linear-gradient(to top, ${beamColor}, ${fadeColor})`;
+            }
+
+            return (
               <motion.div 
+                key="ghost-beam"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute z-0 pointer-events-none"
-                style={{
-                  width: ghostPath.dir === 'left' || ghostPath.dir === 'right' ? '200%' : '20px',
-                  height: ghostPath.dir === 'up' || ghostPath.dir === 'down' ? '200%' : '20px',
-                  background: `linear-gradient(${
-                    ghostPath.dir === 'up' ? 'to top' : 
-                    ghostPath.dir === 'down' ? 'to bottom' : 
-                    ghostPath.dir === 'left' ? 'to left' : 'to right'
-                  }, rgba(34,211,238,0.15), transparent)`,
-                  left: `calc(16px + ${ghostPath.x} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px) + 50% - 10px)`,
-                  top: `calc(16px + ${ghostPath.y} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px) + 50% - 10px)`,
-                  transformOrigin: 'center center',
-                  transform: `translate(${
-                    ghostPath.dir === 'left' ? '-100%' : 
-                    ghostPath.dir === 'right' ? '0' : '0'
-                  }, ${
-                    ghostPath.dir === 'up' ? '-100%' : 
-                    ghostPath.dir === 'down' ? '0' : '0'
-                  })`
+                style={style}
+              >
+                <motion.div 
+                  animate={{ opacity: [0.2, 0.5, 0.2] }}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
+                  className="w-full h-full bg-white/5"
+                />
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
+
+        {/* Arrows */}
+        <AnimatePresence initial={false}>
+          {arrows.map((arrow: ArrowData) => {
+            if (removedIds.has(arrow.id)) return null;
+            
+            const isShaking = shakeId === arrow.id;
+            const isHinted = hintId === arrow.id;
+            const isLocked = arrow.type === 'locked' && hasKeys;
+            const premoveIndex = premoveQueue?.indexOf(arrow.id);
+            const isQueued = premoveIndex !== -1;
+
+            const cellSize = `calc((100% - ${(currentLevel.gridSize - 1) * 8}px - 32px) / ${currentLevel.gridSize})`;
+            const offsetX = `calc(16px + ${arrow.x} * (${cellSize} + 8px))`;
+            const offsetY = `calc(16px + ${arrow.y} * (${cellSize} + 8px))`;
+            
+            return (
+              <motion.button
+                key={arrow.id}
+                layout="position"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ 
+                  scale: 1, 
+                  opacity: isLocked ? 0.4 : 1,
+                  x: isShaking ? [0, -5, 5, -5, 5, 0] : 0,
+                  filter: isLocked ? 'grayscale(1)' : 'grayscale(0)',
                 }}
-              />
-            )}
-          </AnimatePresence>
+                exit={{ 
+                  opacity: 0,
+                  transition: { duration: 0.05 }
+                }}
+                transition={{ 
+                  x: isShaking ? { duration: 0.4, ease: "easeInOut" } : { type: "spring", stiffness: 400, damping: 25, mass: 0.5 },
+                  default: { type: "spring", stiffness: 400, damping: 25, mass: 0.5 }
+                }}
+                whileHover={{ scale: isLocked ? 1 : 1.05 }}
+                whileTap={{ scale: isLocked ? 1 : 0.95 }}
+                onPointerEnter={() => setHoveredArrowId(arrow.id)}
+                onPointerLeave={() => setHoveredArrowId(null)}
+                onPointerDown={(e) => {
+                  handlePointer(e, arrow.id);
+                  setHoveredArrowId(arrow.id);
+                }}
+                onPointerUp={() => setHoveredArrowId(null)}
+                onPointerCancel={() => setHoveredArrowId(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
+                  setHoveredArrowId(arrow.id);
+                  handleArrowClick(arrow);
+                }}
+                className={`
+                  absolute flex items-center justify-center rounded-lg
+                  ${isHinted ? 'shadow-[0_0_15px_rgba(255,255,255,0.3)] outline outline-2 outline-white/40' : ''}
+                  ${activeTool === 'rotate' && !isLocked ? 'outline outline-2 outline-purple-500 animate-pulse' : ''}
+                  ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
+                  ${arrow.type === 'switch' ? 'shadow-[0_0_10px_rgba(236,72,153,0.3)]' : ''}
+                  ${arrow.type === 'key' ? 'shadow-[0_0_15px_rgba(245,158,11,0.2)]' : ''}
+                  ${isQueued ? 'ring-2 ring-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : ''}
+                  z-10
+                `}
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  left: offsetX,
+                  top: offsetY,
+                  backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.1)' :
+                                   arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.1)' :
+                                   arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.1)' :
+                                   arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.1)' :
+                                   isQueued ? 'rgba(16, 185, 129, 0.2)' :
+                                   isHinted ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)'
+                }}
+              >
+                <ArrowIcon 
+                  arrow={arrow} 
+                  isHovered={hoveredArrowId === arrow.id || touchedArrowId === arrow.id || (isExecutingPremove && premoveQueue[execIndex] === arrow.id)} 
+                />
+                {isQueued && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-white text-[10px] font-black italic bg-emerald-500 w-5 h-5 rounded-full flex items-center justify-center shadow-lg transform -translate-y-4">
+                      {premoveIndex + 1}
+                    </span>
+                  </div>
+                )}
+                {isLocked && <div className="absolute inset-0 flex items-center justify-center"><Lock size={12} className="text-white/40" /></div>}
+                {arrow.type === 'key' && <div className="absolute -top-1 -right-1"><div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" /></div>}
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
 
-          {/* Arrows */}
-          {arrows.map((arrow: ArrowData) => (
-            <motion.button
-              key={arrow.id}
-              layoutId={arrow.id}
-              onClick={() => handleArrowClick(arrow)}
-              onMouseEnter={() => setHoveredArrowId(arrow.id)}
-              onMouseLeave={() => setHoveredArrowId(null)}
-              initial={false}
-              animate={{ 
-                opacity: removedIds.has(arrow.id) ? 0 : 1,
-                scale: removedIds.has(arrow.id) ? 1.5 : (hintId === arrow.id ? 1.15 : 1),
-                x: removedIds.has(arrow.id) ? (arrow.dir === 'left' ? -1000 : arrow.dir === 'right' ? 1000 : 0) : (shakeId === arrow.id ? [0, -5, 5, -5, 5, 0] : 0),
-                y: removedIds.has(arrow.id) ? (arrow.dir === 'up' ? -1000 : arrow.dir === 'down' ? 1000 : 0) : 0,
-                rotate: (shakeId === arrow.id ? [0, -2, 2, -2, 2, 0] : 0)
-              }}
-              transition={{ 
-                type: removedIds.has(arrow.id) ? "tween" : "spring", 
-                duration: removedIds.has(arrow.id) ? 0.4 : 0.4,
-                ease: "easeIn"
-              }}
-              className={`
-                absolute flex items-center justify-center rounded-2xl z-10 cursor-pointer overflow-hidden
-                ${removedIds.has(arrow.id) ? 'pointer-events-none' : ''}
-                ${premoveQueue.includes(arrow.id) ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900 shadow-[0_0_15px_rgba(52,211,153,0.4)]' : ''}
-                ${execIndex >= 0 && premoveQueue[execIndex] === arrow.id ? 'scale-110 ring-4 ring-white' : ''}
-                ${hintId === arrow.id ? 'ring-2 ring-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.5)]' : ''}
-              `}
-              style={{
-                width: `calc((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize})`,
-                height: `calc((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize})`,
-                left: `calc(16px + ${arrow.x} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px))`,
-                top: `calc(16px + ${arrow.y} * ((100% - ${(currentLevel.gridSize + 1) * 8}px) / ${currentLevel.gridSize} + 8px))`,
-                backgroundColor: arrow.type === 'key' ? 'rgba(245, 158, 11, 0.15)' :
-                                 arrow.type === 'rotator' ? 'rgba(168, 85, 247, 0.15)' :
-                                 arrow.type === 'shifter' ? 'rgba(6, 182, 212, 0.15)' :
-                                 arrow.type === 'switch' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.03)'
-              }}
+        {/* Victory Modal */}
+        <AnimatePresence>
+          {showVictory && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-[3rem] border-2 border-[#22d3ee]/20"
             >
-              {/* Internal Glass Highlight */}
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-              
-              <ArrowIcon arrow={arrow} size={currentLevel.gridSize > 6 ? 24 : 32} />
-              
-              {/* Type Indicators */}
-              {arrow.type === 'locked' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px]">
-                  <Lock size={16} className={hasKeys ? 'text-white animate-pulse' : 'text-slate-500'} />
-                </div>
-              )}
-              {arrow.type === 'key' && (
-                <div className="absolute top-1 right-1">
-                  <div className="w-2 h-2 bg-amber-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.8)]" />
-                </div>
-              )}
-              
-              {/* Premove Index Badge */}
-              {gameMode === 'premove' && premoveQueue.indexOf(arrow.id) !== -1 && (
-                <div className="absolute bottom-1 right-1 w-4 h-4 bg-emerald-500 text-black text-[8px] font-black rounded-full flex items-center justify-center">
-                  {premoveQueue.indexOf(arrow.id) + 1}
-                </div>
-              )}
-            </motion.button>
-          ))}
-
-          {/* Overlays */}
-          <AnimatePresence>
-            {showVictory && (
-              <motion.div 
-                initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-                animate={{ opacity: 1, backdropFilter: 'blur(10px)' }}
-                className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-cyan-500/10"
+              <motion.div
+                animate={{ y: [0, -10, 0], scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="text-yellow-400 mb-4"
               >
-                <motion.div 
-                  initial={{ scale: 0.5, y: 20 }}
-                  animate={{ scale: 1, y: 0 }}
-                  className="bg-black/80 p-10 rounded-[3rem] border border-cyan-500/30 flex flex-col items-center gap-6 shadow-[0_0_100px_rgba(34,211,238,0.2)]"
-                >
-                  <Trophy size={64} className="text-cyan-400" />
-                  <div className="text-center">
-                    <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white chromatic-title">Clearance Confirmed</h2>
-                    <p className="text-cyan-400/60 text-[10px] font-black uppercase tracking-[0.4em] mt-1">Sector {currentLevelIdx + 1} Secured</p>
-                  </div>
-                  <button 
-                    onClick={nextLevel}
-                    className="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-[0_0_30px_rgba(34,211,238,0.3)]"
-                  >
-                    Next Stage
-                  </button>
-                </motion.div>
+                <Trophy size={60} />
               </motion.div>
-            )}
-
-            {showGameOver && (
-              <motion.div 
-                initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-                animate={{ opacity: 1, backdropFilter: 'blur(10px)' }}
-                className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-red-500/10"
+              <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Stage Clear</h2>
+              <div className="text-center italic text-[#94a3b8] text-xs font-medium uppercase tracking-[0.2em] mb-4 opacity-70">
+                Stage {currentLevelIdx + 1} / {LEVEL_METADATA.length}
+              </div>
+              <p className="text-[#94a3b8] font-mono text-xs mb-6 uppercase tracking-[0.3em]">Complexity Resolved</p>
+              <button
+                onClick={currentLevelIdx < LEVEL_METADATA.length - 1 ? nextLevel : handleReset}
+                disabled={!showVictory}
+                className="px-10 py-3 bg-gradient-to-r from-[#22d3ee] to-[#818cf8] text-[#0f172a] font-bold rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:grayscale"
               >
-                <motion.div 
-                  initial={{ scale: 0.5, y: 20 }}
-                  animate={{ scale: 1, y: 0 }}
-                  className="bg-black/80 p-10 rounded-[3rem] border border-red-500/30 flex flex-col items-center gap-6 shadow-[0_0_100px_rgba(239,68,68,0.2)]"
-                >
-                  <AlertTriangle size={64} className="text-red-500" />
-                  <div className="text-center">
-                    <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white">System Error</h2>
-                    <p className="text-red-500/60 text-[10px] font-black uppercase tracking-[0.4em] mt-1">
-                      {gameOverReason === 'clicks' ? 'Deployment Exhausted' : 
-                       gameOverReason === 'time' ? 'Connection Timeout' : 'Vector Blocked'}
-                    </p>
-                  </div>
-                  <button 
-                    onClick={handleReset}
-                    className="w-full py-4 bg-red-500 hover:bg-red-400 text-black font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-[0_0_30px_rgba(239,68,68,0.3)]"
-                  >
-                    Retry Mission
-                  </button>
-                </motion.div>
+                {currentLevelIdx < LEVEL_METADATA.length - 1 ? 'Next Level' : 'Play Again'}
+                <ChevronRight size={20} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Game Over Modal */}
+        <AnimatePresence>
+          {showGameOver && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute inset-x-[-4px] inset-y-[-4px] flex flex-col items-center justify-center bg-[#0f172a]/95 backdrop-blur-md z-30 rounded-[3rem] border-2 border-red-500/20"
+            >
+              <motion.div
+                animate={{ rotate: [0, -10, 10, 0] }}
+                transition={{ repeat: Infinity, duration: 1 }}
+                className="text-red-500 mb-4"
+              >
+                <AlertTriangle size={60} />
               </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
+              <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter mb-2">Game Over</h2>
+              <p className="text-red-400 font-mono text-xs mb-6 uppercase tracking-[0.3em]">
+                {gameOverReason === 'clicks' ? 'Attempts Exhausted' : 
+                 gameOverReason === 'blocked' ? 'Sequence Failure' : 'Temporal Decay'}
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleReset}
+                  className="px-10 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-bold rounded-xl shadow-[0_0_30px_rgba(239,68,68,0.3)] transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                >
+                  <RefreshCw size={20} />
+                  Try Again
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        </div>
+
+        {/* Premove Execute Button */}
+        <AnimatePresence>
+          {gameMode === 'premove' && premoveQueue.length > 0 && !showVictory && !showGameOver && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute -bottom-20 left-1/2 -translate-x-1/2 z-30 w-full flex justify-center"
+            >
+              <button 
+                onClick={(e) => { e.stopPropagation(); executePremove(); }}
+                disabled={isExecutingPremove}
+                className={`
+                  group relative px-10 py-4 rounded-2xl font-black uppercase tracking-[0.4em] text-[11px] shadow-2xl transition-all overflow-hidden
+                  ${isExecutingPremove 
+                    ? 'bg-slate-800 text-slate-500 cursor-wait' 
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-[#06201b] shadow-emerald-500/40 hover:scale-110 active:scale-95'}
+                `}
+              >
+                <div className="relative z-10 flex items-center gap-3">
+                  {isExecutingPremove ? (
+                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                      <RotateCcw size={14} />
+                    </motion.div>
+                  ) : <Play size={14} fill="currentColor" />}
+                  {isExecutingPremove ? 'Synchronizing Movements...' : 'Run Sequence'}
+                </div>
+                {!isExecutingPremove && (
+                  <motion.div 
+                    className="absolute inset-0 bg-white/20"
+                    initial={{ x: '-100%' }}
+                    whileHover={{ x: '100%' }}
+                    transition={{ duration: 0.5 }}
+                  />
+                )}
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-
-      {/* Premove Launch Control */}
-      {gameMode === 'premove' && !showVictory && !showGameOver && (
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="flex flex-col items-center gap-4"
-        >
-          <button 
-            disabled={premoveQueue.length === 0 || isExecutingPremove}
-            onClick={executePremove}
-            className={`
-              px-12 py-5 rounded-[2rem] font-black uppercase tracking-[0.5em] text-sm transition-all flex items-center gap-4
-              ${premoveQueue.length > 0 && !isExecutingPremove 
-                ? 'bg-emerald-500 text-black shadow-[0_0_40px_rgba(16,185,129,0.3)] hover:scale-105 active:scale-95' 
-                : 'bg-white/5 text-white/20 border border-white/10 cursor-not-allowed'}
-            `}
-          >
-            <Play size={20} fill="currentColor" />
-            Execute Sequence
-          </button>
-          <div className="text-[10px] font-black text-emerald-500/60 uppercase tracking-[0.3em]">
-            {isExecutingPremove ? `Syncing Vector ${execIndex + 1} of ${premoveQueue.length}` : `${premoveQueue.length} Operations in Buffer`}
-          </div>
-        </motion.div>
-      )}
-    </div>
+    </section>
   );
-}
+});
