@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest # This runs on a Mac!
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,8 +16,8 @@ jobs:
 
       - name: Restore iOS Infrastructure
         run: |
-          # Pull the iOS Fortress files from the master branch
-          git checkout origin/master -- ios justfile capacitor.config.ts IOS_BUILD_GUIDE.md
+          # Pull the iOS Fortress files AND the lockfile from the master branch
+          git checkout origin/master -- ios justfile capacitor.config.ts IOS_BUILD_GUIDE.md package-lock.json
           
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -42,4 +42,5 @@ jobs:
           files: build/ipa/*.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
