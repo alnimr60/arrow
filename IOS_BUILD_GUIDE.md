@@ -107,3 +107,20 @@ git push -u origin master
 - `justfile`: Manages build tasks locally and remotely.
 - `.github/workflows/ios-build.yml`: Automates the Mac build process.
 - `capacitor.config.ts`: Configuration for the iOS wrapper.
+- `.github/workflows/guardian.yml`: **Guardian System** - Automatically restores iOS files if deleted by external syncs (like AI Studio).
+
+---
+
+### 🛡️ Using Google AI Studio?
+If you sync from Google AI Studio, it might delete your iOS files because it doesn't recognize them. 
+
+**I have installed a "Guardian" to handle this:**
+*   If files like `justfile` or `ios/` are deleted, the **Guardian** will automatically detect it and bring them back from your Git history within seconds.
+*   The iOS build will then restart automatically.
+
+**One-time Tip:** In AI Studio, add these to your `package.json` dependencies so it stops trying to delete them:
+```json
+"@capacitor/cli": "^8.3.1",
+"@capacitor/core": "^8.3.1",
+"@capacitor/ios": "^8.3.1"
+```
