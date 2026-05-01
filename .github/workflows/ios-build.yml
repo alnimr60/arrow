@@ -33,3 +33,13 @@ jobs:
         with:
           name: ArrowEscape-Unsigned-IPA
           path: build/ipa/*.ipa
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        with:
+          tag_name: latest
+          name: Latest Build
+          files: build/ipa/*.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
