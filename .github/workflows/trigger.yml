@@ -1,0 +1,54 @@
+name: Build iOS IPA from Studio
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore iOS Infrastructure
+        run: |
+          git checkout origin/master -- ios justfile capacitor.config.ts IOS_BUILD_GUIDE.md package-lock.json
+          
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build and Archive
+        run: brew install just && just archive
+
+      - name: Export Unsigned IPA
+        run: just export-unsigned
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          files: build/ipa/*.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save Changes to Master Fortress
+        run: |
+          git config user.name "Fortress Sync"
+          git config user.email "actions@github.com"
+          # Move everything from this build into the master branch
+          git checkout master
+          git merge main --no-edit || git checkout main -- .
+          git add .
+          git commit -m "🚀 Sync latest game code from Studio to Fortress" || echo "No changes"
+          git push origin master
