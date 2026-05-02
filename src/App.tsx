@@ -306,6 +306,11 @@ export default function App() {
     return getLevel(currentLevelIdx, gameMode);
   }, [currentLevelIdx, gameMode, timedLevelIdx, timedFlavor]);
 
+  // Reset hover state when key environmental factors change to prevent "ghost" highlights
+  useEffect(() => {
+    setHoveredArrowId(null);
+  }, [currentLevelIdx, timedLevelIdx, boardId, gameMode]);
+
   useEffect(() => {
     localStorage.setItem('arrow-escape-muted', isMuted.toString());
     if (!isMuted) {
@@ -522,6 +527,7 @@ export default function App() {
             // Transition immediately
             setTimedFlavor(Math.random() > 0.5 ? 'standard' : 'invisible');
             setTimedLevelIdx(Math.floor(Math.random() * 1000000));
+            setHoveredArrowId(null);
           } else {
             setTimeout(() => {
               if (!isMuted) soundService.playSuccess();
@@ -1718,11 +1724,14 @@ const GameBoard = React.memo(({
 }: any) => {
   const boardRef = useRef<HTMLDivElement>(null);
   const [touchedArrowId, setTouchedArrowId] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
   const touchTimeoutRef = useRef<any>(null);
   const isInvisible = gameMode === 'invisible' || (gameMode === 'timed' && timedFlavor === 'invisible');
 
   useEffect(() => {
+    const timer = setTimeout(() => setIsReady(true), 150);
     return () => {
+      clearTimeout(timer);
       if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
     };
   }, []);
@@ -1738,6 +1747,7 @@ const GameBoard = React.memo(({
   const isPointerActive = useRef(false);
 
   const handlePointer = (e: React.PointerEvent, id?: string) => {
+    if (!isReady) return;
     if (id) {
        setTouchedArrowId(id);
        if (touchTimeoutRef.current) clearTimeout(touchTimeoutRef.current);
@@ -1965,9 +1975,10 @@ const GameBoard = React.memo(({
                 }}
                 whileHover={{ scale: isLocked ? 1 : 1.05 }}
                 whileTap={{ scale: isLocked ? 1 : 0.95 }}
-                onPointerEnter={() => setHoveredArrowId(arrow.id)}
+                onPointerEnter={() => isReady && setHoveredArrowId(arrow.id)}
                 onPointerLeave={() => setHoveredArrowId(null)}
                 onPointerDown={(e) => {
+                  if (!isReady) return;
                   handlePointer(e, arrow.id);
                   setHoveredArrowId(arrow.id);
                 }}
@@ -1975,7 +1986,7 @@ const GameBoard = React.memo(({
                 onPointerCancel={() => setHoveredArrowId(null)}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (removedIds.has(arrow.id) || showVictory || showGameOver) return;
+                  if (!isReady || removedIds.has(arrow.id) || showVictory || showGameOver) return;
                   setHoveredArrowId(arrow.id);
                   handleArrowClick(arrow);
                 }}
