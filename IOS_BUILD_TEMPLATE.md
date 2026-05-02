@@ -86,10 +86,16 @@ jobs:
         run: |
           git config user.name "Fortress Guardian"
           git config user.email "actions@github.com"
+          
+          # Switch to fortress branch
           git checkout fortress
-          git merge main --no-edit || git checkout main -- .
+          
+          # Specifically pull only game files from main
+          # This prevents deleting the 'ios' folder and 'justfile'
+          git checkout main -- src public index.html tsconfig.json vite.config.ts package.json package-lock.json .github/workflows/trigger.yml
+          
           git add .
-          git commit -m "Sync game code to Fortress" || echo "No changes"
+          git commit -m "🚀 Sync latest game code to Fortress" || echo "No changes"
           git push origin fortress
 ```
 
