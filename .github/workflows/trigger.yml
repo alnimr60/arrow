@@ -1,38 +1,54 @@
-name: Sync to iOS Fortress
+name: Build iOS IPA from Studio
 on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
-  sync:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  build:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 0
 
-      - name: Sync Game Code
+      - name: Restore iOS Infrastructure
+        run: |
+          git checkout origin/master -- ios justfile capacitor.config.ts IOS_BUILD_GUIDE.md package-lock.json
+          
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build and Archive
+        run: brew install just && just archive
+
+      - name: Export Unsigned IPA
+        run: just export-unsigned
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          files: build/ipa/*.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save Changes to Master Fortress
         run: |
           git config user.name "Fortress Sync"
           git config user.email "actions@github.com"
-          
-          # 1. Save the iOS Fortress files in a temporary spot
-          mkdir ../fortress_backup
-          cp -r ios justfile capacitor.config.ts .github IOS_BUILD_GUIDE.md ../fortress_backup/
-          
-          # 2. Overwrite everything with the code from AI Studio (Main branch)
-          git checkout origin/main -- .
-          
-          # 3. Restore the iOS Fortress files from our backup
-          cp -r ../fortress_backup/* .
-          
-          # 4. Re-inject Capacitor deps just in case
-          npm install @capacitor/core @capacitor/cli @capacitor/ios --package-lock-only || echo "Lockfile update failed, skipping"
-          
-          # 5. Commit and Push to Master
+          # Move everything from this build into the master branch
+          git checkout master
+          git merge main --no-edit || git checkout main -- .
           git add .
-          git commit -m "🚀 Sync latest game code from AI Studio" || echo "No changes to sync"
+          git commit -m "🚀 Sync latest game code from Studio to Fortress" || echo "No changes"
           git push origin master
