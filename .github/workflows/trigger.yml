@@ -16,7 +16,6 @@ jobs:
 
       - name: Restore iOS Infrastructure
         run: |
-          # Pull the iOS Fortress files AND the lockfile from the master branch
           git checkout origin/master -- ios justfile capacitor.config.ts IOS_BUILD_GUIDE.md package-lock.json
           
       - name: Setup Node
@@ -43,3 +42,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Save Changes to Master Fortress
+        run: |
+          git config user.name "Fortress Sync"
+          git config user.email "actions@github.com"
+          # Move everything from this build into the master branch
+          git checkout master
+          git merge main --no-edit || git checkout main -- .
+          git add .
+          git commit -m "🚀 Sync latest game code from Studio to Fortress" || echo "No changes"
+          git push origin master
